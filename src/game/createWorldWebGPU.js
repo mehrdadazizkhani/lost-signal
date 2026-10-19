@@ -212,7 +212,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   scene.add(ridge);
 
   const beacon = new THREE.Group();
-  beacon.position.set(2, 4, -43);
+  beacon.position.set(2, groundHeight(2, -43), -43);
   scene.add(beacon);
   const metal = new THREE.MeshStandardMaterial({ color: 0x323c3a, roughness: 0.7 });
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.35, 7, 8), metal);
