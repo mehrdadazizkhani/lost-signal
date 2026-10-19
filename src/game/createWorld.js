@@ -75,7 +75,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const treeCrown = new THREE.ConeGeometry(1.8, 4.5, 7);
   const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x493d2c, roughness: 1 });
   const crownMaterials = [
-    new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1),
+    new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1 }),
     new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1),
   ];
   const obstacles = [];
