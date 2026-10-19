@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Tree, TreePreset } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
@@ -338,29 +339,43 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
   beaconLight.position.y = 7;
   beacon.add(beaconLight);
 
-  const treeTrunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 6);
-  const treeCrown = new THREE.ConeGeometry(1.8, 4.5, 7);
-  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x493d2c, roughness: 1 });
-  const crownMaterials = [
-    new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1 }),
-    new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1 }),
-  ];
   const obstacles = [];
+  const treePalette = [
+    { bark: 0x51402e, leaves: 0x294633 },
+    { bark: 0x594632, leaves: 0x34513a },
+    { bark: 0x493d2c, leaves: 0x405c40 },
+    { bark: 0x5b4934, leaves: 0x263d30 },
+  ];
   for (let i = 0; i < 100; i += 1) {
     const x = (Math.random() - 0.5) * 120;
     const z = (Math.random() - 0.5) * 125;
     if (Math.hypot(x, z - 16) < 13 || Math.hypot(x - 2, z + 43) < 10) continue;
     const scale = 0.7 + Math.random() * 0.7;
-    const trunk = new THREE.Mesh(treeTrunk, trunkMaterial);
-    trunk.position.set(x, 1.3, z);
-    trunk.scale.setScalar(scale);
-    trunk.castShadow = true;
-    scene.add(trunk);
-    const crown = new THREE.Mesh(treeCrown, crownMaterials[i % crownMaterials.length]);
-    crown.position.set(x, 4.5, z);
-    crown.scale.setScalar(scale);
-    crown.castShadow = true;
-    scene.add(crown);
+    const presetName = i % 5 === 0 ? 'Oak Small' : i % 7 === 0 ? 'Ash Small' : 'Pine Small';
+    const tree = new Tree();
+    tree.options.copy(TreePreset[presetName]);
+    tree.options.seed = 2000 + i * 7919;
+    tree.options.bark.textured = false;
+    tree.options.bark.tint = treePalette[i % treePalette.length].bark;
+    tree.options.leaves.map = null;
+    tree.options.leaves.tint = treePalette[i % treePalette.length].leaves;
+    tree.options.leaves.alphaTest = 0.35;
+    tree.options.trellis.enabled = false;
+    tree.generateLODs([
+      { distance: 0, detail: {} },
+      { distance: 28, hysteresis: 0.06, detail: { sectionStride: 3, segmentFactor: 0.7, leafStride: 2, leafScale: 1.25 } },
+      { distance: 64, hysteresis: 0.06, detail: { sectionStride: 6, segmentFactor: 0.42, leafStride: 3, leafScale: 1.35, billboard: 'single' } },
+    ]);
+    tree.scale.setScalar(0.28 + Math.random() * 0.12);
+    tree.position.set(x, 0, z);
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    tree.traverse((object) => {
+      if (object.isMesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
+    scene.add(tree);
     obstacles.push({ x, z, radius: 0.65 * scale });
   }
 
