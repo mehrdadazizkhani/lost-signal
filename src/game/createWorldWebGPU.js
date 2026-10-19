@@ -3,7 +3,7 @@ import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
 
-export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {} } = {}) {
+export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {}, onWorldMapUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
   const daySky = new THREE.Color('#76a9c5');
   const duskSky = new THREE.Color('#e39a70');
@@ -328,6 +328,36 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     const yaw = Math.random() * Math.PI * 2;
     treeData.push({ x, z, height, scale, trunkHeight, crownRadius, yaw });
     obstacles.push({ x, z, radius: 0.34 * scale });
+  }
+
+  // Export a top-down map from the same height function used by the rendered terrain.
+  // Grid cells are grouped by elevation into SVG paths, so the HUD stays lightweight.
+  {
+    const columns = 96, rows = 104;
+    const minX = -165, minZ = -180;
+    const cellX = 330 / columns, cellZ = 360 / rows;
+    const kinds = ["water", "shore", "lowland", "forest", "upland", "summit"];
+    const paths = Object.fromEntries(kinds.map((kind) => [kind, ""]));
+    for (let row = 0; row < rows; row += 1) {
+      const z0 = minZ + row * cellZ;
+      const zCenter = z0 + cellZ * 0.5;
+      for (let column = 0; column < columns; column += 1) {
+        const x0 = minX + column * cellX;
+        const xCenter = x0 + cellX * 0.5;
+        const h = groundHeight(xCenter, zCenter);
+        const kind = h <= -1.15 ? "water"
+          : h < 1.2 ? "shore"
+          : h < 5.5 ? "lowland"
+          : h < 12 ? "forest"
+          : h < 25 ? "upland" : "summit";
+        const w = cellX + 0.035, d = cellZ + 0.035;
+        paths[kind] += `M${x0.toFixed(2)} ${z0.toFixed(2)}h${w.toFixed(2)}v${d.toFixed(2)}h-${w.toFixed(2)}Z`;
+      }
+    }
+    onWorldMapUpdate({
+      layers: kinds.map((kind) => ({ kind, d: paths[kind] })),
+      trees: treeData.map(({ x, z, scale }) => ({ x, z, scale })),
+    });
   }
 
   const trunkGeometry = new THREE.CylinderGeometry(0.68, 1, 1, 7, 2);
