@@ -76,7 +76,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x493d2c, roughness: 1 });
   const crownMaterials = [
     new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1 }),
-    new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1),
+    new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1 }),
   ];
   const obstacles = [];
   for (let i = 0; i < 100; i += 1) {
