@@ -154,7 +154,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
         }
         float fbm(vec3 p) {
           float v = 0.0, a = 0.5;
-          for (int i = 0; i < 4; i++) { v += noise3(p) * a; p *= 2.03; a *= 0.5; }
+          for (int i = 0; i < 3; i++) { v += noise3(p) * a; p *= 2.03; a *= 0.5; }
           return v;
         }
         void main() {
@@ -209,7 +209,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
       }
       float fbm(vec3 p) {
         float v = 0.0, a = 0.5;
-        for (int i = 0; i < 5; i++) { v += noise3(p) * a; p *= 2.02; a *= 0.5; }
+        for (int i = 0; i < 3; i++) { v += noise3(p) * a; p *= 2.02; a *= 0.5; }
         return v;
       }
       void main() {
@@ -404,6 +404,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     stars.material.uniforms.uNight.value = 1 - daylight;
     milkyWay.material.uniforms.uTime.value = elapsed;
     milkyWay.material.uniforms.uNight.value = THREE.MathUtils.smoothstep(0.42 - sunHeight, 0.05, 0.75);
+    milkyWay.visible = sunHeight < 0.45;
     cloudMaterial.uniforms.uTime.value = elapsed;
     cloudMaterial.uniforms.uDaylight.value = daylight;
     cloudMaterial.uniforms.uSunHeight.value = sunHeight;
