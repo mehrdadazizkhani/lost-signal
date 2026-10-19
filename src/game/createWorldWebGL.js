@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Tree, TreePreset } from '@dgreenheck/ez-tree';
+import { Tree } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
@@ -353,7 +353,7 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
     const scale = 0.7 + Math.random() * 0.7;
     const presetName = i % 5 === 0 ? 'Oak Small' : i % 7 === 0 ? 'Ash Small' : 'Pine Small';
     const tree = new Tree();
-    tree.options.copy(TreePreset[presetName]);
+    tree.loadPreset(presetName);
     tree.options.seed = 2000 + i * 7919;
     tree.options.bark.textured = false;
     tree.options.bark.tint = treePalette[i % treePalette.length].bark;
@@ -361,11 +361,7 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
     tree.options.leaves.tint = treePalette[i % treePalette.length].leaves;
     tree.options.leaves.alphaTest = 0.35;
     tree.options.trellis.enabled = false;
-    tree.generateLODs([
-      { distance: 0, detail: {} },
-      { distance: 28, hysteresis: 0.06, detail: { sectionStride: 3, segmentFactor: 0.7, leafStride: 2, leafScale: 1.25 } },
-      { distance: 64, hysteresis: 0.06, detail: { sectionStride: 6, segmentFactor: 0.42, leafStride: 3, leafScale: 1.35, billboard: 'single' } },
-    ]);
+    tree.generate();
     tree.scale.setScalar(0.28 + Math.random() * 0.12);
     tree.position.set(x, 0, z);
     tree.rotation.y = Math.random() * Math.PI * 2;
