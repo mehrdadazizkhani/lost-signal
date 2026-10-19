@@ -278,14 +278,9 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
 
   camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
 
-  const treeTrunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 6);
-  const treeCrown = new THREE.ConeGeometry(1.8, 4.5, 7);
-  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x493d2c, roughness: 1 });
-  const crownMaterials = [
-    new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1 }),
-    new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1 }),
-    new THREE.MeshStandardMaterial({ color: 0x4b6242, roughness: 1 }),
-  ];
+  // Build a varied, layered conifer forest with instancing to keep draw calls low.
+  // Each tree has a tapered trunk and four overlapping foliage tiers instead of one
+  // simple cone, giving the silhouette a more natural evergreen shape.
   const obstacles = [];
   function distanceToSegment2D(px, pz, a, b) {
     const dx = b.x - a.x;
@@ -300,35 +295,91 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     }
     return false;
   }
-  // Forest placement follows the actual terrain, concentrating around the mountain's
-  // lower slopes while keeping the single summit path and landing/beacon areas clear.
-  let placedTrees = 0;
-  for (let attempt = 0; attempt < 1400 && placedTrees < 145; attempt += 1) {
+
+  const treeData = [];
+  for (let attempt = 0; attempt < 2200 && treeData.length < 210; attempt += 1) {
     const x = (Math.random() - 0.5) * 136;
     const z = (Math.random() - 0.5) * 145;
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
     const height = groundHeight(x, z);
     const mountainDistance = Math.hypot(x - mountain.x, z - mountain.z);
     if (radial > 0.83 || height > 17 || height < -0.2) continue;
-    if (nearTrail(x, z, 4.2) || Math.hypot(x, z - 18) < 8) continue;
-    if (Math.hypot(x - 2, z + 43) < 10) continue;
-    // Most trees frame the mountain rather than cluttering its summit.
-    if (mountainDistance > 53 && Math.random() > 0.32) continue;
-    const scale = 0.72 + Math.random() * 0.82;
-    const trunk = new THREE.Mesh(treeTrunk, trunkMaterial);
-    trunk.position.set(x, height + 1.6 * scale, z);
-    trunk.scale.setScalar(scale);
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-    scene.add(trunk);
-    const crown = new THREE.Mesh(treeCrown, crownMaterials[placedTrees % crownMaterials.length]);
-    crown.position.set(x, height + 3.85 * scale, z);
-    crown.scale.setScalar(scale);
-    crown.castShadow = true;
-    scene.add(crown);
-    obstacles.push({ x, z, radius: 0.72 * scale });
-    placedTrees += 1;
+    if (nearTrail(x, z, 5.1) || Math.hypot(x, z - 18) < 9) continue;
+    if (Math.hypot(x - 2, z + 43) < 11) continue;
+    // Keep the forest concentrated around the mountain's lower slopes and coast.
+    if (mountainDistance > 58 && Math.random() > 0.42) continue;
+    // Avoid dense clumps and keep enough space to navigate between trunks.
+    const minSpacing = 2.7 + Math.random() * 1.2;
+    if (treeData.some((tree) => Math.hypot(x - tree.x, z - tree.z) < minSpacing)) continue;
+
+    const scale = 0.78 + Math.random() * 0.9;
+    const trunkHeight = (2.8 + Math.random() * 1.9) * scale;
+    const crownRadius = (1.05 + Math.random() * 0.65) * scale;
+    const yaw = Math.random() * Math.PI * 2;
+    treeData.push({ x, z, height, scale, trunkHeight, crownRadius, yaw });
+    obstacles.push({ x, z, radius: 0.34 * scale });
   }
+
+  const trunkGeometry = new THREE.CylinderGeometry(0.68, 1, 1, 7, 2);
+  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x51402e, roughness: 1 });
+  const trunkInstances = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, treeData.length);
+  trunkInstances.castShadow = true;
+  trunkInstances.receiveShadow = true;
+
+  const foliageGeometry = new THREE.ConeGeometry(1, 1, 9, 2);
+  const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, vertexColors: true });
+  const foliageTiers = [0, 1, 2, 3].map((tier) => {
+    const mesh = new THREE.InstancedMesh(foliageGeometry, foliageMaterial, treeData.length);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    mesh.userData.tier = tier;
+    return mesh;
+  });
+  const dummy = new THREE.Object3D();
+  const foliagePalette = [0x1d382b, 0x294633, 0x34513a, 0x405c40, 0x263d30, 0x496344];
+  const tempColor = new THREE.Color();
+
+  treeData.forEach((tree, index) => {
+    dummy.position.set(tree.x, tree.height + tree.trunkHeight * 0.5, tree.z);
+    dummy.rotation.set(0, tree.yaw, 0);
+    dummy.scale.set(0.15 * tree.scale, tree.trunkHeight, 0.15 * tree.scale);
+    dummy.updateMatrix();
+    trunkInstances.setMatrixAt(index, dummy.matrix);
+
+    const paletteColor = new THREE.Color(foliagePalette[Math.floor(Math.random() * foliagePalette.length)]);
+    const treeVariation = 0.82 + Math.random() * 0.28;
+    // The lowest tier is broad; upper tiers become shorter and narrower.
+    const tierSpecs = [
+      { y: 0.48, radius: 1.0, height: 0.78 },
+      { y: 0.67, radius: 0.79, height: 0.75 },
+      { y: 0.84, radius: 0.59, height: 0.72 },
+      { y: 0.99, radius: 0.39, height: 0.64 },
+    ];
+    foliageTiers.forEach((mesh, tier) => {
+      const spec = tierSpecs[tier];
+      const radius = tree.crownRadius * spec.radius * treeVariation;
+      const crownHeight = tree.trunkHeight * spec.height;
+      dummy.position.set(
+        tree.x + Math.sin(tree.yaw + tier * 1.7) * 0.06 * tree.scale,
+        tree.height + tree.trunkHeight * spec.y,
+        tree.z + Math.cos(tree.yaw + tier * 1.7) * 0.06 * tree.scale
+      );
+      dummy.rotation.set(0, tree.yaw + tier * 0.23, 0);
+      dummy.scale.set(radius, crownHeight, radius);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(index, dummy.matrix);
+      tempColor.copy(paletteColor).multiplyScalar(0.88 + tier * 0.045 + Math.random() * 0.07);
+      mesh.setColorAt(index, tempColor);
+    });
+  });
+  trunkInstances.instanceMatrix.needsUpdate = true;
+  scene.add(trunkInstances);
+  foliageTiers.forEach((mesh) => {
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    scene.add(mesh);
+  });
 
   camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
 
