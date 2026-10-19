@@ -8,15 +8,16 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const daySky = new THREE.Color('#76a9c5');
   const duskSky = new THREE.Color('#e39a70');
   const nightSky = new THREE.Color('#101b31');
-  scene.background = daySky.clone();
-  const fog = new THREE.FogExp2(daySky.clone(), 0.012);
+  // Sky is rendered by the atmospheric scattering dome; keep a dark fallback only.
+  scene.background = new THREE.Color('#07101b');
+  const fog = new THREE.FogExp2(daySky.clone(), 0.0045);
   scene.fog = fog;
   const sky = new Sky();
   sky.scale.setScalar(450000);
-  sky.material.uniforms.turbidity.value = 7;
-  sky.material.uniforms.rayleigh.value = 1.8;
-  sky.material.uniforms.mieCoefficient.value = 0.006;
-  sky.material.uniforms.mieDirectionalG.value = 0.82;
+  sky.material.uniforms.turbidity.value = 3.2;
+  sky.material.uniforms.rayleigh.value = 2.2;
+  sky.material.uniforms.mieCoefficient.value = 0.0035;
+  sky.material.uniforms.mieDirectionalG.value = 0.78;
   scene.add(sky);
 
   const camera = new THREE.PerspectiveCamera(72, container.clientWidth / Math.max(container.clientHeight, 1), 0.1, 1000000);
@@ -240,18 +241,22 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
         vec3 d = normalize(vDirection);
         vec3 p = d * vec3(16.0, 8.0, 16.0) + vec3(uTime * 0.004, 0.0, uTime * 0.0022);
         float broad = fbm(p);
-        float detail = fbm(p * 2.6 + vec3(7.1, 2.3, 4.8));
-        float density = smoothstep(0.43, 0.64, broad + detail * 0.20);
-        density *= smoothstep(-0.12, 0.12, d.y + 0.2);
-        float alpha = density * (0.22 + uDaylight * 0.57);
-        vec3 nightColor = vec3(0.025, 0.045, 0.085);
-        vec3 duskColor = vec3(0.72, 0.32, 0.23);
-        vec3 dayColor = vec3(0.88, 0.91, 0.94);
-        float sunset = 1.0 - smoothstep(0.02, 0.35, abs(uSunHeight));
-        vec3 litColor = mix(dayColor, duskColor, sunset * 0.82);
-        vec3 cloudColor = mix(nightColor, litColor, uDaylight);
-        float silverLining = pow(max(0.0, 1.0 - abs(density - 0.5) * 2.0), 3.0) * uDaylight * 0.12;
-        cloudColor += vec3(silverLining);
+        float detail = fbm(p * 2.4 + vec3(7.1, 2.3, 4.8));
+        float erosion = fbm(p * 5.1 + vec3(2.7, 9.2, 1.4));
+        float cloudField = broad + detail * 0.22;
+        float density = smoothstep(0.43, 0.66, cloudField);
+        density *= smoothstep(0.28, 0.52, 1.0 - erosion * 0.75);
+        density *= smoothstep(-0.16, 0.16, d.y + 0.18);
+        float alpha = density * (0.16 + uDaylight * 0.60);
+        vec3 nightColor = vec3(0.018, 0.029, 0.055);
+        vec3 duskColor = vec3(0.70, 0.30, 0.23);
+        vec3 dayColor = vec3(0.88, 0.92, 0.97);
+        float sunset = 1.0 - smoothstep(0.015, 0.32, abs(uSunHeight));
+        vec3 litColor = mix(dayColor, duskColor, sunset * 0.76);
+        float underside = smoothstep(-0.05, 0.7, d.y);
+        vec3 cloudColor = mix(nightColor, litColor * (0.66 + underside * 0.34), uDaylight);
+        float edgeLight = pow(1.0 - smoothstep(0.03, 0.22, abs(cloudField - 0.55)), 2.0) * uDaylight * (0.08 + sunset * 0.12);
+        cloudColor += vec3(edgeLight * 0.95, edgeLight * 0.82, edgeLight * 0.65);
         gl_FragColor = vec4(cloudColor, alpha);
       }
     `
@@ -286,9 +291,9 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const waterNormals = new THREE.CanvasTexture(normalCanvas);
   waterNormals.wrapS = THREE.RepeatWrapping;
   waterNormals.wrapT = THREE.RepeatWrapping;
-  waterNormals.repeat.set(18, 18);
+  waterNormals.repeat.set(220, 220);
   waterNormals.colorSpace = THREE.NoColorSpace;
-  const ocean = new Water(new THREE.PlaneGeometry(900, 900), {
+  const ocean = new Water(new THREE.PlaneGeometry(10000, 10000), {
     textureWidth: 512,
     textureHeight: 512,
     waterNormals,
@@ -479,9 +484,9 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     if (sunHeight < -0.18) color.copy(nightSky);
     else if (sunHeight < 0.18) color.copy(nightSky).lerp(duskSky, THREE.MathUtils.smoothstep(sunHeight, -0.18, 0.18));
     else color.copy(duskSky).lerp(daySky, THREE.MathUtils.smoothstep(sunHeight, 0.18, 0.72));
-    scene.background.copy(color);
+    // Keep the atmospheric scattering sky visible; use the palette only for distant haze.
     fog.color.copy(color);
-    fog.density = 0.008 + daylight * 0.003;
+    fog.density = 0.004 + daylight * 0.0025;
     ocean.material.uniforms.time.value = elapsed * 0.45;
     ocean.material.uniforms.sunDirection.value.copy(sunDirection).normalize();
     ocean.material.uniforms.sunColor.value.setHSL(0.105, 0.68, 0.5 + daylight * 0.35);
