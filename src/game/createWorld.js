@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createAudio } from './audio.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 
 export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
@@ -9,6 +10,13 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   scene.background = daySky.clone();
   const fog = new THREE.FogExp2(daySky.clone(), 0.012);
   scene.fog = fog;
+  const sky = new Sky();
+  sky.scale.setScalar(450000);
+  sky.material.uniforms.turbidity.value = 7;
+  sky.material.uniforms.rayleigh.value = 1.8;
+  sky.material.uniforms.mieCoefficient.value = 0.006;
+  sky.material.uniforms.mieDirectionalG.value = 0.82;
+  scene.add(sky);
 
   const camera = new THREE.PerspectiveCamera(72, container.clientWidth / Math.max(container.clientHeight, 1), 0.1, 500);
   camera.rotation.order = 'YXZ';
@@ -34,6 +42,52 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const moon = new THREE.DirectionalLight(0x829bc9, 0.18);
   moon.position.set(45, 35, 25);
   scene.add(moon);
+
+  // Lightweight sky details: shared cloud texture, sprites, sun, moon and stars.
+  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(3.8, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffe0a1, fog: false }));
+  scene.add(sunDisc);
+  const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(2.8, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8efff, fog: false }));
+  scene.add(moonDisc);
+  const starPositions = [];
+  for (let i = 0; i < 420; i += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const elevation = 0.08 + Math.random() * 1.35;
+    const radius = 330;
+    starPositions.push(Math.cos(angle) * Math.cos(elevation) * radius, Math.sin(elevation) * radius, Math.sin(angle) * Math.cos(elevation) * radius);
+  }
+  const starGeometry = new THREE.BufferGeometry();
+  starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+  const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xe1e9ff, size: 1.15, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false }));
+  scene.add(stars);
+
+  const cloudCanvas = document.createElement('canvas');
+  cloudCanvas.width = 256;
+  cloudCanvas.height = 128;
+  const cloudContext = cloudCanvas.getContext('2d');
+  for (let i = 0; i < 110; i += 1) {
+    const x = Math.random() * 256;
+    const y = 22 + Math.random() * 84;
+    const radius = 10 + Math.random() * 34;
+    const gradient = cloudContext.createRadialGradient(x, y, 1, x, y, radius);
+    gradient.addColorStop(0, 'rgba(255,255,255,.58)');
+    gradient.addColorStop(0.5, 'rgba(255,255,255,.32)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    cloudContext.fillStyle = gradient;
+    cloudContext.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+  const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
+  cloudTexture.colorSpace = THREE.SRGBColorSpace;
+  const clouds = [];
+  for (let i = 0; i < 22; i += 1) {
+    const cloud = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTexture, color: 0xffffff, transparent: true, opacity: 0.88, depthWrite: false, fog: false }));
+    const angle = (i / 22) * Math.PI * 2;
+    const radius = 92 + Math.random() * 32;
+    cloud.position.set(Math.cos(angle) * radius, 38 + Math.random() * 24, Math.sin(angle) * radius);
+    cloud.scale.set(58 + Math.random() * 48, 22 + Math.random() * 18, 1);
+    cloud.userData = { speed: 0.18 + Math.random() * 0.28, phase: Math.random() * Math.PI * 2 };
+    scene.add(cloud);
+    clouds.push(cloud);
+  }
 
   const oceanMaterial = new THREE.MeshStandardMaterial({ color: 0x315e69, roughness: 0.24, metalness: 0.12 });
   const ocean = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), oceanMaterial);
@@ -191,6 +245,20 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     const daylight = THREE.MathUtils.clamp(Math.sin((phase - 0.25) * Math.PI * 2) * 0.5 + 0.5, 0.035, 1);
     const sunHeight = Math.sin((phase - 0.25) * Math.PI * 2);
     sun.position.set(Math.cos(phase * Math.PI * 2) * 70, sunHeight * 85, Math.sin(phase * Math.PI * 2) * 55);
+    const sunDirection = sun.position.clone().normalize();
+    sky.material.uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(100);
+    sunDisc.position.copy(sunDirection).multiplyScalar(120);
+    sunDisc.visible = sunDirection.y > 0.015;
+    sunDisc.material.color.setHSL(0.105, 0.78, 0.55 + daylight * 0.18);
+    moonDisc.position.copy(sunDirection).multiplyScalar(-120);
+    moonDisc.visible = sunDirection.y < 0.02;
+    stars.material.opacity = (1 - daylight) * 0.9;
+    clouds.forEach((cloud) => {
+      cloud.position.x += cloud.userData.speed * 0.008;
+      if (cloud.position.x > 150) cloud.position.x = -150;
+      cloud.material.opacity = (0.38 + daylight * 0.5) * (0.82 + Math.sin(elapsed * 0.07 + cloud.userData.phase) * 0.12);
+      cloud.material.color.setHSL(0.58, 0.12, 0.62 + daylight * 0.32);
+    });
     sun.intensity = 0.08 + daylight * 2.7;
     sun.color.setHSL(0.09 - daylight * 0.045, 0.58, 0.6 + daylight * 0.08);
     hemi.intensity = 0.18 + daylight * 1.7;
@@ -202,6 +270,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     else color.copy(duskSky).lerp(daySky, THREE.MathUtils.clamp((sunHeight - 0.12) / 0.5, 0, 1));
     scene.background.copy(color);
     fog.color.copy(color);
+    fog.density = 0.008 + daylight * 0.003;
     oceanMaterial.color.setHSL(0.53, 0.38, 0.12 + daylight * 0.1);
     if (lastTimeUpdate !== totalMinutes) {
       lastTimeUpdate = totalMinutes;
