@@ -10,19 +10,24 @@ const controls = [
 
 export default function App() {
   const mountRef = useRef(null);
+  const worldRef = useRef(null);
   const [started, setStarted] = useState(false);
 
   useEffect(() => {
     const world = createWorld(mountRef.current);
-    return () => world.dispose();
+    worldRef.current = world;
+    return () => {
+      world.dispose();
+      worldRef.current = null;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!started) return undefined;
-    const canvas = mountRef.current?.querySelector('canvas');
-    canvas?.requestPointerLock?.();
-    return undefined;
-  }, [started]);
+  function startGame() {
+    setStarted(true);
+    // Request pointer lock directly inside the click gesture; browsers may
+    // reject pointer-lock requests made later from a React effect.
+    worldRef.current?.requestPointerLock();
+  }
 
   return (
     <main className="game-shell">
@@ -74,10 +79,10 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <button className="play-button" onClick={() => setStarted(true)}>
+            <button className="play-button" onClick={startGame}>
               ENTER THE ISLAND <span aria-hidden="true">↗</span>
             </button>
-            <p className="hint">Desktop recommended · Click the world to capture the mouse.</p>
+            <p className="hint">Desktop recommended · Click to capture the mouse. Press Esc to release it.</p>
           </section>
         </div>
       )}
