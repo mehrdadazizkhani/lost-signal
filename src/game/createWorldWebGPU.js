@@ -36,6 +36,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
   renderer.domElement.tabIndex = 0;
+  await renderer.init();
 
   const hemi = new THREE.HemisphereLight(0xc9e1e3, 0x35402d, 1.8);
   scene.add(hemi);
@@ -307,7 +308,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     const sunDirection = new THREE.Vector3(Math.cos(phase * Math.PI * 2), sunHeight * 1.15, Math.sin(phase * Math.PI * 2) * 0.78).normalize();
     sun.position.copy(sunDirection).multiplyScalar(100);
     moon.position.copy(sunDirection).multiplyScalar(-80);
-    sky.sunPosition.value.copy(sunDirection).multiplyScalar(10000);
+    sky.sunPosition.value.copy(sunDirection);
     sky.cloudCoverage.value = 0.34 + daylight * 0.12;
     sky.cloudDensity.value = 0.42 + daylight * 0.14;
     moonDisc.position.copy(sunDirection).multiplyScalar(-120);
@@ -345,7 +346,6 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     updateDayNight(elapsed);
     renderer.render(scene, camera);
   }
-  await renderer.init();
   render();
 
   function onResize() {
