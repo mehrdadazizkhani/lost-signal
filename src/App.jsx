@@ -16,6 +16,8 @@ export default function App() {
   const [started, setStarted] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hasEnteredWorld, setHasEnteredWorld] = useState(false);
+  const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [muted, setMuted] = useState(false);
   const [volumes, setVolumes] = useState(initialAudio);
   const [gameTime, setGameTime] = useState('08:00');
@@ -51,6 +53,17 @@ export default function App() {
       worldRef.current = null;
       setWorldReady(false);
     };
+  }, []);
+
+  useEffect(() => {
+    const handlePointerLockChange = () => {
+      const locked = Boolean(document.pointerLockElement);
+      setIsPointerLocked(locked);
+      if (locked) setHasEnteredWorld(true);
+    };
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    handlePointerLockChange();
+    return () => document.removeEventListener('pointerlockchange', handlePointerLockChange);
   }, []);
 
   useEffect(() => {
@@ -111,23 +124,24 @@ export default function App() {
               </button>
             </div>
             <section className="mission-card">
-              <span className="eyebrow">PRIMARY OBJECTIVE</span>
+              <div className="mission-heading"><span className="mission-pulse" /><span className="eyebrow">CURRENT OBJECTIVE</span><span className="mission-index">01 / 03</span></div>
               <strong>Find the signal point</strong>
               <small>Explore the island and locate the beacon.</small>
+              <div className="mission-progress"><span /></div>
             </section>
           </header>
           <CompassMap navigation={navigation} worldMap={worldMap} />
           <div className="crosshair" aria-hidden="true" />
           <footer className="hud-bottom">
-            <div className="stat-row">
+            <div className="player-status"><div className="player-status-label"><span className="player-status-mark">LS</span><span><strong>FIELD STATUS</strong><small>ISLAND SURVIVOR · DAY 01</small></span></div><div className="stat-row">
               <Stat label="VITALITY" value="100" />
               <Stat label="STAMINA" value="100" />
               <Stat label="SUPPLIES" value="0 / 3" />
-            </div>
-            <section className="field-log">
-              <span className="eyebrow">FIELD LOG</span>
+            </div></div>
+            <section className="field-log"><div className="field-log-heading"><span className="eyebrow">FIELD LOG</span><span className="log-time">08:00 / ENTRY 001</span></div>
               <p>You woke on the beach. Find supplies. Find a way out.</p>
             </section>
+            <div className="hud-key-hint"><kbd>ESC</kbd><span>PAUSE</span></div>
           </footer>
         </>
       )}
@@ -142,9 +156,12 @@ export default function App() {
               <p className="menu-lead">Somewhere between the wreckage and the horizon, there is still a reason to keep going.</p>
               <div className="menu-rule" />
               <p className="menu-description">A quiet journey through an unknown island. Follow the wind. Listen to the ocean. Find the light.</p>
-              <button className="play-button" onClick={startGame} disabled={!worldReady}>BEGIN YOUR JOURNEY <span aria-hidden="true">↗</span></button>
-              <button className="text-button" onClick={() => setSettingsOpen(true)}>SETTINGS <span>＋</span></button>
-              <p className="menu-footnote">HEADPHONES RECOMMENDED · BUILT FOR SOLITUDE</p>
+              <button className={`play-button ${!worldReady ? 'is-loading' : ''}`} onClick={startGame} disabled={!worldReady}>
+                <span className="play-button-copy"><span className="play-button-kicker">CHAPTER 01</span><strong>{worldReady ? 'BEGIN YOUR JOURNEY' : 'PREPARING THE ISLAND'}</strong></span>
+                <span className="play-button-icon" aria-hidden="true">{worldReady ? '↗' : '···'}</span>
+              </button>
+              <div className="menu-secondary-actions"><button className="text-button" onClick={() => setSettingsOpen(true)}><span className="menu-action-icon">⚙</span> SETTINGS <span>↗</span></button><span className="menu-control-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> MOVE <i>·</i> MOUSE LOOK</span></div>
+              <p className="menu-footnote"><span className="footnote-signal" /> HEADPHONES RECOMMENDED <span>·</span> BUILT FOR SOLITUDE</p>
             </section>
             <aside className="menu-side">
               <div className="side-index">01 <span>—</span> THE SHORE</div>
@@ -152,7 +169,21 @@ export default function App() {
               <div className="side-bottom"><span>W A S D</span><span>MOVE THROUGH THE ISLAND</span></div>
             </aside>
           </div>
-          <div className="menu-bottomline"><span>LOST SIGNAL / FIELD STUDY</span><span>NO MAP. NO PROMISES. JUST THE LIGHT.</span><span>VER. 0.2</span></div>
+          <div className="menu-bottomline"><span className="bottom-brand"><span className="bottom-brand-symbol">LS</span> LOST SIGNAL <i>/</i> FIELD STUDY</span><span className="bottom-mantra">NO MAP. NO PROMISES. JUST THE LIGHT.</span><span className="bottom-version"><span className="status-dot" /> BUILD 0.2 <i>·</i> ISLAND SYSTEMS ONLINE</span></div>
+        </div>
+      )}
+
+      {started && hasEnteredWorld && !isPointerLocked && !settingsOpen && (
+        <div className="pause-screen">
+          <div className="pause-panel">
+            <div className="pause-topline"><span className="eyebrow"><span className="pause-live-dot" /> CONNECTION INTERRUPTED</span><span className="settings-mark">LS / PAUSE</span></div>
+            <p className="pause-overline">TAKE A BREATH.</p>
+            <h2>The island <em>can wait.</em></h2>
+            <p className="pause-description">The wind is still moving. The signal is still out there.</p>
+            <button className="play-button pause-resume" onClick={resumeGame}><span className="play-button-copy"><span className="play-button-kicker">RETURN TO YOUR JOURNEY</span><strong>RESUME EXPLORATION</strong></span><span className="play-button-icon" aria-hidden="true">↗</span></button>
+            <button className="text-button pause-settings" onClick={openSettings}>SOUND &amp; SETTINGS <span>↗</span></button>
+            <div className="pause-footer"><span>PROGRESS SAVES AS YOU EXPLORE</span><span>WASD <i>·</i> MOVE <i>·</i> MOUSE LOOK</span></div>
+          </div>
         </div>
       )}
 
