@@ -201,12 +201,12 @@ function CompassMap({ navigation }) {
           <g clipPath="url(#minimap-clip)">
             <circle cx="100" cy="100" r="94" fill="url(#minimap-water)" />
             <g className="minimap-rotating-layer" transform={`rotate(${yawDegrees} 100 100) translate(${-x * scale} ${-z * scale})`}>
-              <ellipse cx="100" cy="100" rx="60" ry="64" className="minimap-island" />
-              <path d="M 100 114 L 101.5 105 L 99 98 L 95.3 89.9 L 97.7 84.4 L 92.2 80.5 L 86 76.6" className="minimap-trail" />
-              <ellipse cx="86" cy="76.6" rx="13" ry="15" className="minimap-mountain" />
-              <path d="M 80 82 L 86 67 L 92 82 Z" className="minimap-peak" />
-              <circle cx="101.6" cy="66.5" r="4.6" className="minimap-beacon-pulse" />
-              <circle cx="101.6" cy="66.5" r="2.2" className="minimap-beacon" />
+              <ellipse cx="100" cy="100" rx="72" ry="76" className="minimap-island" />
+              <path d="M 100 114 L 105 101 L 102 86 L 94 73.5 L 86 65 L 78 60 L 69.6 59.4" className="minimap-trail" />
+              <ellipse cx="70" cy="60" rx="20" ry="25" className="minimap-mountain" />
+              <path d="M 58 72 L 70 43 L 83 70 L 76 66 L 70 72 L 64 66 Z" className="minimap-peak" />
+              <circle cx="107" cy="44" r="4.6" className="minimap-beacon-pulse" />
+              <circle cx="107" cy="44" r="2.2" className="minimap-beacon" />
               <text x="100" y="23" className="minimap-cardinal">N</text>
               <text x="177" y="103" className="minimap-cardinal">E</text>
               <text x="100" y="183" className="minimap-cardinal">S</text>
@@ -222,7 +222,7 @@ function CompassMap({ navigation }) {
         </svg>
         <span className="minimap-caption">YOU ARE HERE</span>
       </div>
-      <div className="minimap-legend"><span><i className="legend-beacon" /> SIGNAL</span><span><i className="legend-trail" /> TRAIL</span></div>
+      <div className="minimap-legend"><span><i className="legend-beacon" /> SIGNAL</span><span><i className="legend-trail" /> WORN GROUND</span></div>
     </section>
   );
 }
