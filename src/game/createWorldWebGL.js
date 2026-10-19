@@ -364,6 +364,36 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
     obstacles.push({ x, z, radius: 0.65 * scale });
   }
 
+  // Match the minimap to the actual fallback island footprint, ridge and placed trees.
+  {
+    const columns = 96, rows = 104;
+    const minX = -100, minZ = -100;
+    const cellX = 200 / columns, cellZ = 200 / rows;
+    const kinds = ["water", "shore", "lowland", "forest", "upland", "summit"];
+    const paths = Object.fromEntries(kinds.map((kind) => [kind, ""]));
+    for (let row = 0; row < rows; row += 1) {
+      const z0 = minZ + row * cellZ;
+      for (let column = 0; column < columns; column += 1) {
+        const x0 = minX + column * cellX;
+        const x = x0 + cellX * 0.5, z = z0 + cellZ * 0.5;
+        const radial = Math.sqrt((x * x) / (78 * 78) + (z * z) / (84.24 * 84.24));
+        const ridgeDistance = Math.hypot(x + 18, z + 36);
+        const height = radial >= 1 ? -2 : ridgeDistance < 22 ? 18 - ridgeDistance * (20 / 22) : -0.3;
+        const kind = height <= -1.15 ? "water"
+          : height < 1.2 ? "shore"
+          : height < 5.5 ? "lowland"
+          : height < 12 ? "forest"
+          : height < 25 ? "upland" : "summit";
+        const w = cellX + 0.035, d = cellZ + 0.035;
+        paths[kind] += `M${x0.toFixed(2)} ${z0.toFixed(2)}h${w.toFixed(2)}v${d.toFixed(2)}h-${w.toFixed(2)}Z`;
+      }
+    }
+    onWorldMapUpdate({
+      layers: kinds.map((kind) => ({ kind, d: paths[kind] })),
+      trees: obstacles.map(({ x, z, radius }) => ({ x, z, scale: radius / 0.65 })),
+    });
+  }
+
   const audio = createAudio();
   const keys = new Set();
   const playerRadius = 0.55;
