@@ -4,8 +4,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
 
 export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
-  const daySky = new THREE.Color('#9bb7b5');
-  const duskSky = new THREE.Color('#bd886b');
+  const daySky = new THREE.Color('#76a9c5');
+  const duskSky = new THREE.Color('#e39a70');
   const nightSky = new THREE.Color('#101b31');
   scene.background = daySky.clone();
   const fog = new THREE.FogExp2(daySky.clone(), 0.012);
@@ -69,8 +69,9 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     const y = 22 + Math.random() * 84;
     const radius = 10 + Math.random() * 34;
     const gradient = cloudContext.createRadialGradient(x, y, 1, x, y, radius);
-    gradient.addColorStop(0, 'rgba(255,255,255,.58)');
-    gradient.addColorStop(0.5, 'rgba(255,255,255,.32)');
+    gradient.addColorStop(0, 'rgba(255,255,255,.88)');
+    gradient.addColorStop(0.42, 'rgba(255,255,255,.62)');
+    gradient.addColorStop(0.72, 'rgba(255,255,255,.20)');
     gradient.addColorStop(1, 'rgba(255,255,255,0)');
     cloudContext.fillStyle = gradient;
     cloudContext.fillRect(x - radius, y - radius, radius * 2, radius * 2);
@@ -83,8 +84,8 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     const angle = (i / 22) * Math.PI * 2;
     const radius = 92 + Math.random() * 32;
     cloud.position.set(Math.cos(angle) * radius, 38 + Math.random() * 24, Math.sin(angle) * radius);
-    cloud.scale.set(58 + Math.random() * 48, 22 + Math.random() * 18, 1);
-    cloud.userData = { speed: 0.18 + Math.random() * 0.28, phase: Math.random() * Math.PI * 2 };
+    cloud.scale.set(68 + Math.random() * 56, 25 + Math.random() * 22, 1);
+    cloud.userData = { speed: 0.7 + Math.random() * 0.45, phase: Math.random() * Math.PI * 2, originX: cloud.position.x };
     scene.add(cloud);
     clouds.push(cloud);
   }
@@ -241,11 +242,13 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     const time = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}`;
-    const phase = (hours + minutes / 60) / 24;
+    // Keep the HUD clock rounded to minutes, but move the sun continuously between updates.
+    const phase = ((8 * 60 + elapsed * 2) % (24 * 60)) / (24 * 60);
     const daylight = THREE.MathUtils.clamp(Math.sin((phase - 0.25) * Math.PI * 2) * 0.5 + 0.5, 0.035, 1);
     const sunHeight = Math.sin((phase - 0.25) * Math.PI * 2);
-    sun.position.set(Math.cos(phase * Math.PI * 2) * 70, sunHeight * 85, Math.sin(phase * Math.PI * 2) * 55);
-    const sunDirection = sun.position.clone().normalize();
+    const sunDirection = new THREE.Vector3(Math.cos(phase * Math.PI * 2), sunHeight * 1.15, Math.sin(phase * Math.PI * 2) * 0.78).normalize();
+    sun.position.copy(sunDirection).multiplyScalar(100);
+    moon.position.copy(sunDirection).multiplyScalar(-80);
     sky.material.uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(100);
     sunDisc.position.copy(sunDirection).multiplyScalar(120);
     sunDisc.visible = sunDirection.y > 0.015;
@@ -254,10 +257,12 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     moonDisc.visible = sunDirection.y < 0.02;
     stars.material.opacity = (1 - daylight) * 0.9;
     clouds.forEach((cloud) => {
-      cloud.position.x += cloud.userData.speed * 0.008;
-      if (cloud.position.x > 150) cloud.position.x = -150;
-      cloud.material.opacity = (0.38 + daylight * 0.5) * (0.82 + Math.sin(elapsed * 0.07 + cloud.userData.phase) * 0.12);
-      cloud.material.color.setHSL(0.58, 0.12, 0.62 + daylight * 0.32);
+      cloud.position.x = ((cloud.userData.originX + elapsed * cloud.userData.speed * 0.9 + 150) % 300) - 150;
+      const cloudLight = 0.42 + daylight * 0.5;
+      cloud.material.opacity = (0.5 + daylight * 0.38) * (0.94 + Math.sin(elapsed * 0.045 + cloud.userData.phase) * 0.06);
+      if (sunHeight < -0.12) cloud.material.color.set('#52647c');
+      else if (sunHeight < 0.25) cloud.material.color.set('#e7a17d');
+      else cloud.material.color.setRGB(cloudLight, cloudLight * 0.99, cloudLight * 0.94);
     });
     sun.intensity = 0.08 + daylight * 2.7;
     sun.color.setHSL(0.09 - daylight * 0.045, 0.58, 0.6 + daylight * 0.08);
@@ -266,8 +271,8 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     beaconLight.intensity = 25 + (1 - daylight) * 12 + Math.sin(elapsed * 2.5) * 4;
     lampMaterial.emissiveIntensity = 2.2 + Math.sin(elapsed * 2.5) * 0.5;
     if (sunHeight < -0.18) color.copy(nightSky);
-    else if (sunHeight < 0.12) color.copy(nightSky).lerp(duskSky, (sunHeight + 0.18) / 0.3);
-    else color.copy(duskSky).lerp(daySky, THREE.MathUtils.clamp((sunHeight - 0.12) / 0.5, 0, 1));
+    else if (sunHeight < 0.18) color.copy(nightSky).lerp(duskSky, THREE.MathUtils.smoothstep(sunHeight, -0.18, 0.18));
+    else color.copy(duskSky).lerp(daySky, THREE.MathUtils.smoothstep(sunHeight, 0.18, 0.72));
     scene.background.copy(color);
     fog.color.copy(color);
     fog.density = 0.008 + daylight * 0.003;
