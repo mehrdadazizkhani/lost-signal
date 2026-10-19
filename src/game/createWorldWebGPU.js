@@ -3,7 +3,7 @@ import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
 
-export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } = {}) {
+export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
   const daySky = new THREE.Color('#76a9c5');
   const duskSky = new THREE.Color('#e39a70');
@@ -522,6 +522,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   let stamina = 100;
   let footstepClock = 0;
   let lastTimeUpdate = -1;
+  let lastNavigationUpdate = -1;
   const clock = new THREE.Clock();
 
   function requestPointerLock() {
@@ -643,6 +644,10 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     const elapsed = clock.elapsedTime;
     updateMovement(delta);
     updateDayNight(elapsed);
+    if (elapsed - lastNavigationUpdate >= 0.12) {
+      lastNavigationUpdate = elapsed;
+      onNavigationUpdate({ x: camera.position.x, z: camera.position.z, yaw });
+    }
     renderer.render(scene, camera);
   }
   render();
