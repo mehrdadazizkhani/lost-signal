@@ -14,6 +14,7 @@ export default function App() {
   const mountRef = useRef(null);
   const worldRef = useRef(null);
   const [started, setStarted] = useState(false);
+  const [worldReady, setWorldReady] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [volumes, setVolumes] = useState(initialAudio);
@@ -21,16 +22,30 @@ export default function App() {
   const [timeOfDay, setTimeOfDay] = useState('MORNING');
 
   useEffect(() => {
-    const world = createWorld(mountRef.current, {
+    let cancelled = false;
+    setWorldReady(false);
+
+    createWorld(mountRef.current, {
       onTimeUpdate: ({ time, period }) => {
         setGameTime(time);
         setTimeOfDay(period);
       },
+    }).then((world) => {
+      if (cancelled) {
+        world.dispose();
+        return;
+      }
+      worldRef.current = world;
+      setWorldReady(true);
+    }).catch((error) => {
+      console.error('LOST SIGNAL could not initialize its renderer.', error);
     });
-    worldRef.current = world;
+
     return () => {
-      world.dispose();
+      cancelled = true;
+      worldRef.current?.dispose();
       worldRef.current = null;
+      setWorldReady(false);
     };
   }, []);
 
@@ -47,7 +62,8 @@ export default function App() {
   }, [muted]);
 
   function startGame() {
-    worldRef.current?.startAudio();
+    if (!worldRef.current) return;
+    worldRef.current.startAudio();
     worldRef.current?.requestPointerLock();
     setStarted(true);
     setSettingsOpen(false);
@@ -121,7 +137,7 @@ export default function App() {
               <p className="menu-lead">Somewhere between the wreckage and the horizon, there is still a reason to keep going.</p>
               <div className="menu-rule" />
               <p className="menu-description">A quiet journey through an unknown island. Follow the wind. Listen to the ocean. Find the light.</p>
-              <button className="play-button" onClick={startGame}>BEGIN YOUR JOURNEY <span aria-hidden="true">↗</span></button>
+              <button className="play-button" onClick={startGame} disabled={!worldReady}>BEGIN YOUR JOURNEY <span aria-hidden="true">↗</span></button>
               <button className="text-button" onClick={() => setSettingsOpen(true)}>SETTINGS <span>＋</span></button>
               <p className="menu-footnote">HEADPHONES RECOMMENDED · BUILT FOR SOLITUDE</p>
             </section>
