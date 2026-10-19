@@ -227,37 +227,63 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   beaconLight.position.y = 7;
   beacon.add(beaconLight);
 
+  camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
+
   const treeTrunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 6);
   const treeCrown = new THREE.ConeGeometry(1.8, 4.5, 7);
   const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x493d2c, roughness: 1 });
   const crownMaterials = [
     new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1 }),
     new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0x4b6242, roughness: 1 }),
   ];
   const obstacles = [];
-  for (let i = 0; i < 100; i += 1) {
-    const x = (Math.random() - 0.5) * 120;
-    const z = (Math.random() - 0.5) * 125;
-    if (Math.hypot(x, z - 16) < 13 || Math.hypot(x - 2, z + 43) < 10) continue;
-    const scale = 0.7 + Math.random() * 0.7;
+  function distanceToSegment2D(px, pz, a, b) {
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const lengthSq = dx * dx + dz * dz;
+    const t = lengthSq ? THREE.MathUtils.clamp(((px - a.x) * dx + (pz - a.z) * dz) / lengthSq, 0, 1) : 0;
+    return Math.hypot(px - (a.x + dx * t), pz - (a.z + dz * t));
+  }
+  function nearTrail(x, z, padding = 4) {
+    for (let i = 0; i < trailWaypoints.length - 1; i += 1) {
+      if (distanceToSegment2D(x, z, trailWaypoints[i], trailWaypoints[i + 1]) < padding) return true;
+    }
+    return false;
+  }
+  // Forest placement follows the actual terrain, concentrating around the mountain's
+  // lower slopes while keeping the single summit path and landing/beacon areas clear.
+  let placedTrees = 0;
+  for (let attempt = 0; attempt < 1400 && placedTrees < 145; attempt += 1) {
+    const x = (Math.random() - 0.5) * 136;
+    const z = (Math.random() - 0.5) * 145;
+    const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
+    const height = groundHeight(x, z);
+    const mountainDistance = Math.hypot(x - mountain.x, z - mountain.z);
+    if (radial > 0.83 || height > 17 || height < -0.2) continue;
+    if (nearTrail(x, z, 4.2) || Math.hypot(x, z - 18) < 8) continue;
+    if (Math.hypot(x - 2, z + 43) < 10) continue;
+    // Most trees frame the mountain rather than cluttering its summit.
+    if (mountainDistance > 53 && Math.random() > 0.32) continue;
+    const scale = 0.72 + Math.random() * 0.82;
     const trunk = new THREE.Mesh(treeTrunk, trunkMaterial);
-    trunk.position.set(x, 1.3, z);
+    trunk.position.set(x, height + 1.6 * scale, z);
     trunk.scale.setScalar(scale);
     trunk.castShadow = true;
+    trunk.receiveShadow = true;
     scene.add(trunk);
-    const crown = new THREE.Mesh(treeCrown, crownMaterials[i % crownMaterials.length]);
-    crown.position.set(x, 4.5, z);
+    const crown = new THREE.Mesh(treeCrown, crownMaterials[placedTrees % crownMaterials.length]);
+    crown.position.set(x, height + 3.85 * scale, z);
     crown.scale.setScalar(scale);
     crown.castShadow = true;
     scene.add(crown);
-    obstacles.push({ x, z, radius: 0.65 * scale });
+    obstacles.push({ x, z, radius: 0.72 * scale });
+    placedTrees += 1;
   }
 
   const audio = createAudio();
   const keys = new Set();
   const playerRadius = 0.55;
-  const islandRadiusX = 76;
-  const islandRadiusZ = 81;
   const lookSensitivity = 0.0022;
   const moveVector = new THREE.Vector3();
   const worldUp = new THREE.Vector3(0, 1, 0);
@@ -325,6 +351,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     const oldZ = camera.position.z;
     if (canMoveTo(nextX, camera.position.z)) camera.position.x = nextX;
     if (canMoveTo(camera.position.x, nextZ)) camera.position.z = nextZ;
+    camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
     const actualDistance = Math.hypot(camera.position.x - oldX, camera.position.z - oldZ);
     if (actualDistance > 0.001) {
       footstepClock += delta;
