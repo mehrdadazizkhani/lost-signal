@@ -184,45 +184,72 @@ export default function App() {
 function CompassMap({ navigation }) {
   const yawDegrees = navigation.yaw * 180 / Math.PI;
   const heading = Math.round(((360 - yawDegrees) % 360 + 360) % 360);
-  const scale = 0.78;
+  const [smoothYaw, setSmoothYaw] = useState(0);
+  const previousHeading = useRef(0);
+  const accumulatedHeading = useRef(0);
+  useEffect(() => {
+    const delta = ((yawDegrees - previousHeading.current + 540) % 360) - 180;
+    accumulatedHeading.current += delta;
+    previousHeading.current = yawDegrees;
+    setSmoothYaw(accumulatedHeading.current);
+  }, [yawDegrees]);
+
+  const scale = 0.52;
   const x = navigation.x || 0;
   const z = navigation.z ?? 18;
+  const elevation = Number.isFinite(navigation.y) ? Math.max(0, navigation.y - 1.7) : 0;
+  const trees = [
+    [58,43],[66,48],[72,38],[82,44],[92,39],[104,46],[117,42],[127,50],[139,46],
+    [47,58],[57,65],[67,59],[94,57],[108,61],[122,62],[143,66],
+    [42,75],[51,82],[62,78],[101,78],[114,82],[130,78],[145,86],
+    [43,95],[53,103],[64,94],[92,96],[111,101],[126,96],[139,105],
+    [50,117],[62,125],[74,115],[91,122],[108,119],[125,127],[140,119],
+    [62,140],[76,147],[89,138],[105,146],[120,140],[133,149],
+    [80,158],[96,161],[112,157]
+  ];
 
   return (
-    <section className="compass-map" aria-label={`Compass and minimap, heading ${heading} degrees`}>
-      <div className="compass-heading"><span className="compass-live-dot" /> FIELD NAVIGATION <strong>{String(heading).padStart(3, '0')}°</strong></div>
+    <section className="compass-map" aria-label={`Compass and terrain minimap, heading ${heading} degrees`}>
+      <div className="compass-heading"><span className="compass-live-dot" /><span>HEADING</span><strong>{String(heading).padStart(3, '0')}°</strong><span className="compass-elevation">ELEV {Math.round(elevation)}m</span></div>
       <div className="minimap-frame">
-        <svg className="minimap-svg" viewBox="0 0 200 200" role="img" aria-label="Top-down island map showing your position, trail, mountain, and signal beacon">
+        <div className="minimap-cardinals" style={{ transform: `rotate(${smoothYaw}deg)` }} aria-hidden="true">
+          <span className="cardinal-n">N</span><span className="cardinal-e">E</span><span className="cardinal-s">S</span><span className="cardinal-w">W</span>
+        </div>
+        <svg className="minimap-svg" viewBox="0 0 200 200" role="img" aria-label="Topographic island map with irregular coastline, elevation contours, rocky ridges and trees">
           <defs>
             <clipPath id="minimap-clip"><circle cx="100" cy="100" r="94" /></clipPath>
-            <radialGradient id="minimap-water"><stop offset="0%" stopColor="#193d40" /><stop offset="100%" stopColor="#071512" /></radialGradient>
+            <radialGradient id="minimap-water"><stop offset="0%" stopColor="#173b3b" /><stop offset="100%" stopColor="#06100e" /></radialGradient>
+            <linearGradient id="minimap-land" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#87916a" /><stop offset="45%" stopColor="#667b58" /><stop offset="100%" stopColor="#3d5d48" />
+            </linearGradient>
+            <linearGradient id="minimap-relief" x1="0" y1="0" x2="0.9" y2="1">
+              <stop offset="0%" stopColor="#c0bca0" stopOpacity=".88" /><stop offset="48%" stopColor="#777e70" stopOpacity=".44" /><stop offset="100%" stopColor="#2e493a" stopOpacity=".06" />
+            </linearGradient>
           </defs>
           <circle cx="100" cy="100" r="98" className="minimap-rim" />
           <g clipPath="url(#minimap-clip)">
             <circle cx="100" cy="100" r="94" fill="url(#minimap-water)" />
-            <g className="minimap-rotating-layer" transform={`rotate(${yawDegrees} 100 100) translate(${-x * scale} ${-z * scale})`}>
-              <ellipse cx="100" cy="100" rx="72" ry="76" className="minimap-island" />
-              <path d="M 100 114 L 105 101 L 102 86 L 94 73.5 L 86 65 L 78 60 L 69.6 59.4" className="minimap-trail" />
-              <ellipse cx="70" cy="60" rx="20" ry="25" className="minimap-mountain" />
-              <path d="M 58 72 L 70 43 L 83 70 L 76 66 L 70 72 L 64 66 Z" className="minimap-peak" />
-              <circle cx="107" cy="44" r="4.6" className="minimap-beacon-pulse" />
-              <circle cx="107" cy="44" r="2.2" className="minimap-beacon" />
-              <text x="100" y="23" className="minimap-cardinal">N</text>
-              <text x="177" y="103" className="minimap-cardinal">E</text>
-              <text x="100" y="183" className="minimap-cardinal">S</text>
-              <text x="22" y="103" className="minimap-cardinal">W</text>
-              {Array.from({ length: 24 }, (_, i) => (
-                <line key={i} x1="100" y1="8" x2="100" y2={i % 6 === 0 ? 17 : 12} className="minimap-tick" transform={`rotate(${i * 15} 100 100)`} />
-              ))}
+            <g className="minimap-rotating-layer" transform={`rotate(${smoothYaw} 100 100) translate(${-x * scale} ${-z * scale})`}>
+              <path className="minimap-island" d="M99 24 L111 27 120 34 134 38 143 48 151 55 157 68 166 77 163 88 171 99 163 111 159 123 151 130 147 144 136 153 125 163 112 166 101 174 87 169 75 173 64 165 54 159 47 149 37 142 34 130 27 119 31 107 25 96 31 84 29 72 38 61 43 49 55 43 63 33 76 30 86 24 Z" fill="url(#minimap-land)" />
+              <path d="M39 62 Q52 47 67 51 T91 40 Q108 35 120 48 T151 66 Q158 82 146 92 T148 119 Q135 134 126 149 T99 160 Q78 164 63 148 T42 127 Q34 108 39 92 T39 62Z" fill="#87956b" opacity=".24" />
+              <path d="M51 94 Q64 83 71 69 Q78 52 94 50 Q110 48 121 62 Q132 75 124 87 Q119 99 105 105 Q92 111 85 126 Q74 138 61 124 Q48 113 51 94Z" fill="url(#minimap-relief)" />
+              <path className="minimap-contour contour-outer" d="M43 96 Q47 72 67 59 Q84 43 103 49 Q129 48 139 70 Q150 90 136 111 Q127 128 111 139 Q91 157 70 139 Q46 126 43 96Z" />
+              <path className="minimap-contour" d="M53 94 Q56 75 73 64 Q88 53 103 58 Q122 57 131 75 Q140 91 129 107 Q119 123 105 132 Q89 145 73 131 Q55 119 53 94Z" />
+              <path className="minimap-contour contour-high" d="M64 88 Q67 73 81 66 Q94 59 106 65 Q119 65 123 79 Q130 91 119 103 Q109 116 98 121 Q85 129 74 116 Q63 106 64 88Z" />
+              <path className="minimap-contour contour-high" d="M73 88 Q76 76 87 72 Q98 68 107 74 Q116 81 112 92 Q109 103 98 109 Q86 115 78 104 Q71 98 73 88Z" />
+              <path className="minimap-ridge" d="M43 111 Q58 100 65 83 T82 62 L93 52" />
+              <path className="minimap-ridge" d="M91 119 Q105 108 111 95 T131 81 L145 82" />
+              <path className="minimap-rock" d="M79 68 L87 58 92 68 98 62 104 73 99 80 91 77 86 83Z" />
+              <path className="minimap-rock" d="M115 96 L122 87 128 93 135 89 139 100 130 107 122 104Z" />
+              <g className="minimap-trees">
+                {trees.map(([tx, ty], i) => <circle key={i} cx={tx} cy={ty} r={i % 5 === 0 ? 2.25 : 1.55} className={i % 4 === 0 ? "minimap-tree-light" : "minimap-tree"} />)}
+              </g>
+              <path className="minimap-coast-highlight" d="M99 24 L111 27 120 34 134 38 143 48 151 55 157 68 166 77 163 88 171 99 163 111 159 123 151 130 147 144 136 153 125 163 112 166 101 174 87 169 75 173 64 165 54 159 47 149 37 142 34 130 27 119 31 107 25 96 31 84 29 72 38 61 43 49 55 43 63 33 76 30 86 24 Z" />
             </g>
-            <circle cx="100" cy="100" r="93" className="minimap-inner-rim" />
           </g>
-          <path d="M100 12 L94 25 L100 22 L106 25 Z" className="minimap-heading-pointer" />
-          <circle cx="100" cy="100" r="3" className="minimap-player-center" />
+          <circle cx="100" cy="100" r="93" className="minimap-inner-rim" />
         </svg>
-        <span className="minimap-caption">YOU ARE HERE</span>
       </div>
-      <div className="minimap-legend"><span><i className="legend-beacon" /> SIGNAL</span><span><i className="legend-trail" /> WORN GROUND</span></div>
     </section>
   );
 }
