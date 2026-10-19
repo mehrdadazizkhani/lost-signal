@@ -21,6 +21,7 @@ export default function App() {
   const [gameTime, setGameTime] = useState('08:00');
   const [timeOfDay, setTimeOfDay] = useState('MORNING');
   const [navigation, setNavigation] = useState({ x: 0, z: 18, yaw: 0 });
+  const [worldMap, setWorldMap] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +33,7 @@ export default function App() {
         setTimeOfDay(period);
       },
       onNavigationUpdate: (position) => setNavigation(position),
+      onWorldMapUpdate: (mapData) => setWorldMap(mapData),
     }).then((world) => {
       if (cancelled) {
         world.dispose();
@@ -114,7 +116,7 @@ export default function App() {
               <small>Explore the island and locate the beacon.</small>
             </section>
           </header>
-          <CompassMap navigation={navigation} />
+          <CompassMap navigation={navigation} worldMap={worldMap} />
           <div className="crosshair" aria-hidden="true" />
           <footer className="hud-bottom">
             <div className="stat-row">
@@ -181,7 +183,7 @@ export default function App() {
   );
 }
 
-function CompassMap({ navigation }) {
+function CompassMap({ navigation, worldMap }) {
   const yawDegrees = navigation.yaw * 180 / Math.PI;
   const heading = Math.round(((360 - yawDegrees) % 360 + 360) % 360);
   const [smoothYaw, setSmoothYaw] = useState(0);
@@ -194,19 +196,11 @@ function CompassMap({ navigation }) {
     setSmoothYaw(accumulatedHeading.current);
   }, [yawDegrees]);
 
-  const scale = 0.52;
+  const scale = 0.55;
   const x = navigation.x || 0;
   const z = navigation.z ?? 18;
   const elevation = Number.isFinite(navigation.y) ? Math.max(0, navigation.y - 1.7) : 0;
-  const trees = [
-    [58,43],[66,48],[72,38],[82,44],[92,39],[104,46],[117,42],[127,50],[139,46],
-    [47,58],[57,65],[67,59],[94,57],[108,61],[122,62],[143,66],
-    [42,75],[51,82],[62,78],[101,78],[114,82],[130,78],[145,86],
-    [43,95],[53,103],[64,94],[92,96],[111,101],[126,96],[139,105],
-    [50,117],[62,125],[74,115],[91,122],[108,119],[125,127],[140,119],
-    [62,140],[76,147],[89,138],[105,146],[120,140],[133,149],
-    [80,158],[96,161],[112,157]
-  ];
+
 
   return (
     <section className="compass-map" aria-label={`Compass and terrain minimap, heading ${heading} degrees`}>
@@ -230,21 +224,14 @@ function CompassMap({ navigation }) {
           <g clipPath="url(#minimap-clip)">
             <circle cx="100" cy="100" r="94" fill="url(#minimap-water)" />
             <g className="minimap-rotating-layer" transform={`rotate(${smoothYaw} 100 100) translate(${-x * scale} ${-z * scale})`}>
-              <path className="minimap-island" d="M99 24 L111 27 120 34 134 38 143 48 151 55 157 68 166 77 163 88 171 99 163 111 159 123 151 130 147 144 136 153 125 163 112 166 101 174 87 169 75 173 64 165 54 159 47 149 37 142 34 130 27 119 31 107 25 96 31 84 29 72 38 61 43 49 55 43 63 33 76 30 86 24 Z" fill="url(#minimap-land)" />
-              <path d="M39 62 Q52 47 67 51 T91 40 Q108 35 120 48 T151 66 Q158 82 146 92 T148 119 Q135 134 126 149 T99 160 Q78 164 63 148 T42 127 Q34 108 39 92 T39 62Z" fill="#87956b" opacity=".24" />
-              <path d="M51 94 Q64 83 71 69 Q78 52 94 50 Q110 48 121 62 Q132 75 124 87 Q119 99 105 105 Q92 111 85 126 Q74 138 61 124 Q48 113 51 94Z" fill="url(#minimap-relief)" />
-              <path className="minimap-contour contour-outer" d="M43 96 Q47 72 67 59 Q84 43 103 49 Q129 48 139 70 Q150 90 136 111 Q127 128 111 139 Q91 157 70 139 Q46 126 43 96Z" />
-              <path className="minimap-contour" d="M53 94 Q56 75 73 64 Q88 53 103 58 Q122 57 131 75 Q140 91 129 107 Q119 123 105 132 Q89 145 73 131 Q55 119 53 94Z" />
-              <path className="minimap-contour contour-high" d="M64 88 Q67 73 81 66 Q94 59 106 65 Q119 65 123 79 Q130 91 119 103 Q109 116 98 121 Q85 129 74 116 Q63 106 64 88Z" />
-              <path className="minimap-contour contour-high" d="M73 88 Q76 76 87 72 Q98 68 107 74 Q116 81 112 92 Q109 103 98 109 Q86 115 78 104 Q71 98 73 88Z" />
-              <path className="minimap-ridge" d="M43 111 Q58 100 65 83 T82 62 L93 52" />
-              <path className="minimap-ridge" d="M91 119 Q105 108 111 95 T131 81 L145 82" />
-              <path className="minimap-rock" d="M79 68 L87 58 92 68 98 62 104 73 99 80 91 77 86 83Z" />
-              <path className="minimap-rock" d="M115 96 L122 87 128 93 135 89 139 100 130 107 122 104Z" />
-              <g className="minimap-trees">
-                {trees.map(([tx, ty], i) => <circle key={i} cx={tx} cy={ty} r={i % 5 === 0 ? 2.25 : 1.55} className={i % 4 === 0 ? "minimap-tree-light" : "minimap-tree"} />)}
+              <g transform={`translate(100 100) scale(${scale})`}>
+                {worldMap?.layers?.map((layer) => (
+                  <path key={layer.kind} d={layer.d} className={`minimap-height-layer minimap-layer-${layer.kind}`} />
+                ))}
+                {worldMap?.trees?.map((tree, i) => (
+                  <circle key={i} cx={tree.x} cy={tree.z} r={0.75 + tree.scale * 0.16} className={i % 4 === 0 ? "minimap-tree-light" : "minimap-tree"} />
+                ))}
               </g>
-              <path className="minimap-coast-highlight" d="M99 24 L111 27 120 34 134 38 143 48 151 55 157 68 166 77 163 88 171 99 163 111 159 123 151 130 147 144 136 153 125 163 112 166 101 174 87 169 75 173 64 165 54 159 47 149 37 142 34 130 27 119 31 107 25 96 31 84 29 72 38 61 43 49 55 43 63 33 76 30 86 24 Z" />
             </g>
           </g>
           <circle cx="100" cy="100" r="93" className="minimap-inner-rim" />
