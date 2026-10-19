@@ -327,7 +327,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   trunkInstances.receiveShadow = true;
 
   const foliageGeometry = new THREE.ConeGeometry(1, 1, 9, 2);
-  const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, vertexColors: true });
+  const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
   const foliageTiers = [0, 1, 2, 3].map((tier) => {
     const mesh = new THREE.InstancedMesh(foliageGeometry, foliageMaterial, treeData.length);
     mesh.castShadow = true;
