@@ -22,6 +22,7 @@ export function createWorld(container) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
+  renderer.domElement.tabIndex = 0;
 
   scene.add(new THREE.HemisphereLight(0xc9e1e3, 0x35402d, 2));
 
@@ -33,20 +34,13 @@ export function createWorld(container) {
 
   const ocean = new THREE.Mesh(
     new THREE.PlaneGeometry(900, 900),
-    new THREE.MeshStandardMaterial({
-      color: 0x315e69,
-      roughness: 0.24,
-      metalness: 0.12,
-    }),
+    new THREE.MeshStandardMaterial({ color: 0x315e69, roughness: 0.24, metalness: 0.12 }),
   );
   ocean.rotation.x = -Math.PI / 2;
   ocean.position.y = -1.15;
   scene.add(ocean);
 
-  const terrainMaterial = new THREE.MeshStandardMaterial({
-    color: 0x536b45,
-    roughness: 1,
-  });
+  const terrainMaterial = new THREE.MeshStandardMaterial({ color: 0x536b45, roughness: 1 });
   const terrain = new THREE.Mesh(new THREE.CircleGeometry(78, 96), terrainMaterial);
   terrain.rotation.x = -Math.PI / 2;
   terrain.position.y = -0.3;
@@ -92,32 +86,117 @@ export function createWorld(container) {
     new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1 }),
     new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1 }),
   ];
+  const obstacles = [];
 
   for (let i = 0; i < 100; i += 1) {
     const x = (Math.random() - 0.5) * 120;
     const z = (Math.random() - 0.5) * 125;
     if (Math.hypot(x, z - 16) < 13 || Math.hypot(x - 2, z + 43) < 10) continue;
+    const scale = 0.7 + Math.random() * 0.7;
     const trunk = new THREE.Mesh(treeTrunk, trunkMaterial);
     trunk.position.set(x, 1.3, z);
-    trunk.scale.setScalar(0.7 + Math.random() * 0.7);
+    trunk.scale.setScalar(scale);
     trunk.castShadow = true;
     scene.add(trunk);
-
     const crown = new THREE.Mesh(treeCrown, crownMaterials[i % crownMaterials.length]);
     crown.position.set(x, 4.5, z);
-    crown.scale.setScalar(0.7 + Math.random() * 0.7);
+    crown.scale.setScalar(scale);
     crown.castShadow = true;
     scene.add(crown);
+    obstacles.push({ x, z, radius: 0.65 * scale });
   }
 
-  const clock = new THREE.Clock();
+  const keys = new Set();
+  const playerRadius = 0.55;
+  const islandRadiusX = 76;
+  const islandRadiusZ = 81;
+  const lookSensitivity = 0.0022;
+  const moveVector = new THREE.Vector3();
+  let yaw = 0;
+  let pitch = 0;
   let frameId = 0;
   let disposed = false;
+  let stamina = 100;
+  const clock = new THREE.Clock();
+
+  function requestPointerLock() {
+    if (document.pointerLockElement !== renderer.domElement) {
+      renderer.domElement.requestPointerLock?.();
+    }
+  }
+
+  function onPointerLockChange() {
+    if (document.pointerLockElement !== renderer.domElement) keys.clear();
+  }
+
+  function onMouseMove(event) {
+    if (document.pointerLockElement !== renderer.domElement) return;
+    yaw -= event.movementX * lookSensitivity;
+    pitch -= event.movementY * lookSensitivity;
+    pitch = THREE.MathUtils.clamp(pitch, -Math.PI / 2.2, Math.PI / 2.2);
+    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  }
+
+  function onKeyDown(event) {
+    const key = event.key.toLowerCase();
+    if (['w', 'a', 's', 'd', 'shift', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(key)) {
+      event.preventDefault();
+    }
+    keys.add(key);
+  }
+
+  function onKeyUp(event) {
+    keys.delete(event.key.toLowerCase());
+  }
+
+  function onCanvasClick() {
+    if (document.pointerLockElement !== renderer.domElement) requestPointerLock();
+  }
+
+  document.addEventListener('pointerlockchange', onPointerLockChange);
+  document.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  renderer.domElement.addEventListener('click', onCanvasClick);
+
+  function canMoveTo(x, z) {
+    const insideIsland = (x * x) / (islandRadiusX * islandRadiusX)
+      + (z * z) / (islandRadiusZ * islandRadiusZ) < 0.94;
+    if (!insideIsland) return false;
+    return !obstacles.some((tree) => Math.hypot(x - tree.x, z - tree.z) < playerRadius + tree.radius);
+  }
+
+  function updateMovement(delta) {
+    if (document.pointerLockElement !== renderer.domElement) return;
+    const forward = Number(keys.has('w') || keys.has('arrowup'))
+      - Number(keys.has('s') || keys.has('arrowdown'));
+    const strafe = Number(keys.has('d') || keys.has('arrowright'))
+      - Number(keys.has('a') || keys.has('arrowleft'));
+    if (!forward && !strafe) {
+      stamina = Math.min(100, stamina + delta * 12);
+      return;
+    }
+
+    const sprinting = keys.has('shift') && stamina > 0;
+    const speed = sprinting ? 12 : 6;
+    if (sprinting) stamina = Math.max(0, stamina - delta * 24);
+    else stamina = Math.min(100, stamina + delta * 10);
+
+    moveVector.set(strafe, 0, -forward);
+    if (moveVector.lengthSq() > 1) moveVector.normalize();
+    moveVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    const nextX = camera.position.x + moveVector.x * speed * delta;
+    const nextZ = camera.position.z + moveVector.z * speed * delta;
+    if (canMoveTo(nextX, camera.position.z)) camera.position.x = nextX;
+    if (canMoveTo(camera.position.x, nextZ)) camera.position.z = nextZ;
+  }
 
   function render() {
     if (disposed) return;
     frameId = window.requestAnimationFrame(render);
-    const elapsed = clock.getElapsedTime();
+    const delta = Math.min(clock.getDelta(), 0.05);
+    const elapsed = clock.elapsedTime;
+    updateMovement(delta);
     lampMaterial.emissiveIntensity = 2.4 + Math.sin(elapsed * 2.5) * 0.6;
     beaconLight.intensity = 28 + Math.sin(elapsed * 2.5) * 7;
     renderer.render(scene, camera);
@@ -134,10 +213,17 @@ export function createWorld(container) {
   window.addEventListener('resize', onResize);
 
   return {
+    requestPointerLock,
     dispose() {
       disposed = true;
       window.cancelAnimationFrame(frameId);
       window.removeEventListener('resize', onResize);
+      document.removeEventListener('pointerlockchange', onPointerLockChange);
+      document.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      renderer.domElement.removeEventListener('click', onCanvasClick);
+      if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
       renderer.dispose();
       renderer.domElement.remove();
       scene.traverse((object) => {
