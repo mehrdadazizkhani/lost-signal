@@ -1,0 +1,152 @@
+import * as THREE from 'three';
+
+export function createWorld(container) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#8ea6a5');
+  scene.fog = new THREE.FogExp2('#8ea6a5', 0.012);
+
+  const camera = new THREE.PerspectiveCamera(
+    72,
+    container.clientWidth / Math.max(container.clientHeight, 1),
+    0.1,
+    500,
+  );
+  camera.rotation.order = 'YXZ';
+  camera.position.set(0, 2, 18);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  container.appendChild(renderer.domElement);
+
+  scene.add(new THREE.HemisphereLight(0xc9e1e3, 0x35402d, 2));
+
+  const sun = new THREE.DirectionalLight(0xffd2a0, 3.3);
+  sun.position.set(-55, 75, -35);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  scene.add(sun);
+
+  const ocean = new THREE.Mesh(
+    new THREE.PlaneGeometry(900, 900),
+    new THREE.MeshStandardMaterial({
+      color: 0x315e69,
+      roughness: 0.24,
+      metalness: 0.12,
+    }),
+  );
+  ocean.rotation.x = -Math.PI / 2;
+  ocean.position.y = -1.15;
+  scene.add(ocean);
+
+  const terrainMaterial = new THREE.MeshStandardMaterial({
+    color: 0x536b45,
+    roughness: 1,
+  });
+  const terrain = new THREE.Mesh(new THREE.CircleGeometry(78, 96), terrainMaterial);
+  terrain.rotation.x = -Math.PI / 2;
+  terrain.position.y = -0.3;
+  terrain.scale.set(1, 1.08, 0.18);
+  terrain.receiveShadow = true;
+  scene.add(terrain);
+
+  const ridge = new THREE.Mesh(
+    new THREE.ConeGeometry(22, 20, 7),
+    new THREE.MeshStandardMaterial({ color: 0x405a40, roughness: 1 }),
+  );
+  ridge.position.set(-18, 8, -36);
+  ridge.castShadow = true;
+  ridge.receiveShadow = true;
+  scene.add(ridge);
+
+  const beacon = new THREE.Group();
+  beacon.position.set(2, 4, -43);
+  scene.add(beacon);
+
+  const metal = new THREE.MeshStandardMaterial({ color: 0x323c3a, roughness: 0.7 });
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.35, 7, 8), metal);
+  post.position.y = 3.5;
+  post.castShadow = true;
+  beacon.add(post);
+
+  const lampMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffd58a,
+    emissive: 0xffa52f,
+    emissiveIntensity: 3,
+  });
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 12), lampMaterial);
+  lamp.position.y = 7;
+  beacon.add(lamp);
+  const beaconLight = new THREE.PointLight(0xffbd65, 28, 48, 2);
+  beaconLight.position.y = 7;
+  beacon.add(beaconLight);
+
+  const treeTrunk = new THREE.CylinderGeometry(0.18, 0.3, 3.2, 6);
+  const treeCrown = new THREE.ConeGeometry(1.8, 4.5, 7);
+  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x493d2c, roughness: 1 });
+  const crownMaterials = [
+    new THREE.MeshStandardMaterial({ color: 0x263f31, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0x3d5940, roughness: 1 }),
+  ];
+
+  for (let i = 0; i < 100; i += 1) {
+    const x = (Math.random() - 0.5) * 120;
+    const z = (Math.random() - 0.5) * 125;
+    if (Math.hypot(x, z - 16) < 13 || Math.hypot(x - 2, z + 43) < 10) continue;
+    const trunk = new THREE.Mesh(treeTrunk, trunkMaterial);
+    trunk.position.set(x, 1.3, z);
+    trunk.scale.setScalar(0.7 + Math.random() * 0.7);
+    trunk.castShadow = true;
+    scene.add(trunk);
+
+    const crown = new THREE.Mesh(treeCrown, crownMaterials[i % crownMaterials.length]);
+    crown.position.set(x, 4.5, z);
+    crown.scale.setScalar(0.7 + Math.random() * 0.7);
+    crown.castShadow = true;
+    scene.add(crown);
+  }
+
+  const clock = new THREE.Clock();
+  let frameId = 0;
+  let disposed = false;
+
+  function render() {
+    if (disposed) return;
+    frameId = window.requestAnimationFrame(render);
+    const elapsed = clock.getElapsedTime();
+    lampMaterial.emissiveIntensity = 2.4 + Math.sin(elapsed * 2.5) * 0.6;
+    beaconLight.intensity = 28 + Math.sin(elapsed * 2.5) * 7;
+    renderer.render(scene, camera);
+  }
+  render();
+
+  function onResize() {
+    const width = Math.max(container.clientWidth, 1);
+    const height = Math.max(container.clientHeight, 1);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+  }
+  window.addEventListener('resize', onResize);
+
+  return {
+    dispose() {
+      disposed = true;
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', onResize);
+      renderer.dispose();
+      renderer.domElement.remove();
+      scene.traverse((object) => {
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) {
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => material.dispose());
+        }
+      });
+    },
+  };
+}
