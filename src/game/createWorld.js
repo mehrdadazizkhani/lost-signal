@@ -400,15 +400,13 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     sunDisc.material.color.setHSL(0.105, 0.78, 0.55 + daylight * 0.18);
     moonDisc.position.copy(sunDirection).multiplyScalar(-120);
     moonDisc.visible = sunDirection.y < 0.02;
-    stars.material.opacity = (1 - daylight) * 0.9;
-    clouds.forEach((cloud) => {
-      cloud.position.x = ((cloud.userData.originX + elapsed * cloud.userData.speed * 0.9 + 150) % 300) - 150;
-      const cloudLight = 0.42 + daylight * 0.5;
-      cloud.material.opacity = (0.5 + daylight * 0.38) * (0.94 + Math.sin(elapsed * 0.045 + cloud.userData.phase) * 0.06);
-      if (sunHeight < -0.12) cloud.material.color.set('#52647c');
-      else if (sunHeight < 0.25) cloud.material.color.set('#e7a17d');
-      else cloud.material.color.setRGB(cloudLight, cloudLight * 0.99, cloudLight * 0.94);
-    });
+    stars.material.uniforms.uTime.value = elapsed;
+    stars.material.uniforms.uNight.value = 1 - daylight;
+    milkyWay.material.uniforms.uTime.value = elapsed;
+    milkyWay.material.uniforms.uNight.value = THREE.MathUtils.smoothstep(0.42 - sunHeight, 0.05, 0.75);
+    cloudMaterial.uniforms.uTime.value = elapsed;
+    cloudMaterial.uniforms.uDaylight.value = daylight;
+    cloudMaterial.uniforms.uSunHeight.value = sunHeight;
     sun.intensity = 0.08 + daylight * 2.7;
     sun.color.setHSL(0.09 - daylight * 0.045, 0.58, 0.6 + daylight * 0.08);
     hemi.intensity = 0.18 + daylight * 1.7;
