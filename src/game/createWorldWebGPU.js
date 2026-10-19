@@ -593,7 +593,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
 
   function canMoveTo(x, z) {
     const insideIsland = (x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ) < 0.94;
-    if (!insideIsland) return false;
+    if (!insideIsland || groundHeight(x, z) <= -0.95) return false;
     return !obstacles.some((tree) => Math.hypot(x - tree.x, z - tree.z) < playerRadius + tree.radius);
   }
 
