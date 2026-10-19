@@ -20,6 +20,7 @@ export default function App() {
   const [volumes, setVolumes] = useState(initialAudio);
   const [gameTime, setGameTime] = useState('08:00');
   const [timeOfDay, setTimeOfDay] = useState('MORNING');
+  const [navigation, setNavigation] = useState({ x: 0, z: 18, yaw: 0 });
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +31,7 @@ export default function App() {
         setGameTime(time);
         setTimeOfDay(period);
       },
+      onNavigationUpdate: (position) => setNavigation(position),
     }).then((world) => {
       if (cancelled) {
         world.dispose();
@@ -112,6 +114,7 @@ export default function App() {
               <small>Explore the island and locate the beacon.</small>
             </section>
           </header>
+          <CompassMap navigation={navigation} />
           <div className="crosshair" aria-hidden="true" />
           <footer className="hud-bottom">
             <div className="stat-row">
@@ -175,6 +178,52 @@ export default function App() {
         </div>
       )}
     </main>
+  );
+}
+
+function CompassMap({ navigation }) {
+  const yawDegrees = navigation.yaw * 180 / Math.PI;
+  const heading = Math.round(((360 - yawDegrees) % 360 + 360) % 360);
+  const scale = 0.78;
+  const x = navigation.x || 0;
+  const z = navigation.z ?? 18;
+
+  return (
+    <section className="compass-map" aria-label={`Compass and minimap, heading ${heading} degrees`}>
+      <div className="compass-heading"><span className="compass-live-dot" /> FIELD NAVIGATION <strong>{String(heading).padStart(3, '0')}°</strong></div>
+      <div className="minimap-frame">
+        <svg className="minimap-svg" viewBox="0 0 200 200" role="img" aria-label="Top-down island map showing your position, trail, mountain, and signal beacon">
+          <defs>
+            <clipPath id="minimap-clip"><circle cx="100" cy="100" r="94" /></clipPath>
+            <radialGradient id="minimap-water"><stop offset="0%" stopColor="#193d40" /><stop offset="100%" stopColor="#071512" /></radialGradient>
+          </defs>
+          <circle cx="100" cy="100" r="98" className="minimap-rim" />
+          <g clipPath="url(#minimap-clip)">
+            <circle cx="100" cy="100" r="94" fill="url(#minimap-water)" />
+            <g className="minimap-rotating-layer" transform={`rotate(${yawDegrees} 100 100) translate(${-x * scale} ${-z * scale})`}>
+              <ellipse cx="100" cy="100" rx="60" ry="64" className="minimap-island" />
+              <path d="M 100 114 L 101.5 105 L 99 98 L 95.3 89.9 L 97.7 84.4 L 92.2 80.5 L 86 76.6" className="minimap-trail" />
+              <ellipse cx="86" cy="76.6" rx="13" ry="15" className="minimap-mountain" />
+              <path d="M 80 82 L 86 67 L 92 82 Z" className="minimap-peak" />
+              <circle cx="101.6" cy="66.5" r="4.6" className="minimap-beacon-pulse" />
+              <circle cx="101.6" cy="66.5" r="2.2" className="minimap-beacon" />
+              <text x="100" y="23" className="minimap-cardinal">N</text>
+              <text x="177" y="103" className="minimap-cardinal">E</text>
+              <text x="100" y="183" className="minimap-cardinal">S</text>
+              <text x="22" y="103" className="minimap-cardinal">W</text>
+              {Array.from({ length: 24 }, (_, i) => (
+                <line key={i} x1="100" y1="8" x2="100" y2={i % 6 === 0 ? 17 : 12} className="minimap-tick" transform={`rotate(${i * 15} 100 100)`} />
+              ))}
+            </g>
+            <circle cx="100" cy="100" r="93" className="minimap-inner-rim" />
+          </g>
+          <path d="M100 12 L94 25 L100 22 L106 25 Z" className="minimap-heading-pointer" />
+          <circle cx="100" cy="100" r="3" className="minimap-player-center" />
+        </svg>
+        <span className="minimap-caption">YOU ARE HERE</span>
+      </div>
+      <div className="minimap-legend"><span><i className="legend-beacon" /> SIGNAL</span><span><i className="legend-trail" /> TRAIL</span></div>
+    </section>
   );
 }
 
