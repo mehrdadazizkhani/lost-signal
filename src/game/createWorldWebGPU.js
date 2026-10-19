@@ -112,6 +112,42 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   stars.renderOrder = 3;
   scene.add(stars);
 
+  // A lightweight stellar band keeps the Milky Way visible without custom GLSL,
+  // so it remains compatible with WebGPURenderer.
+  const galaxyPositions = [];
+  const galaxyColors = [];
+  const galaxyNormal = new THREE.Vector3(0.31, 0.83, -0.46).normalize();
+  for (let i = 0; i < 24000 && galaxyPositions.length < 9000; i += 1) {
+    const azimuth = Math.random() * Math.PI * 2;
+    const y = Math.random() * 2 - 1;
+    const ring = Math.sqrt(1 - y * y);
+    const direction = new THREE.Vector3(Math.cos(azimuth) * ring, y, Math.sin(azimuth) * ring);
+    if (Math.abs(direction.dot(galaxyNormal)) > 0.12 || direction.y < 0.015) continue;
+    const radius = 360 + Math.random() * 12;
+    galaxyPositions.push(direction.x * radius, direction.y * radius, direction.z * radius);
+    const warmth = Math.random();
+    const tint = warmth < 0.22
+      ? new THREE.Color(0x9aaddd)
+      : warmth > 0.82
+        ? new THREE.Color(0xe4c7a8)
+        : new THREE.Color(0xc7d4ee);
+    galaxyColors.push(tint.r, tint.g, tint.b);
+  }
+  const galaxyGeometry = new THREE.BufferGeometry();
+  galaxyGeometry.setAttribute('position', new THREE.Float32BufferAttribute(galaxyPositions, 3));
+  galaxyGeometry.setAttribute('color', new THREE.Float32BufferAttribute(galaxyColors, 3));
+  const galaxy = new THREE.Points(galaxyGeometry, new THREE.PointsMaterial({
+    size: 1.25,
+    sizeAttenuation: false,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    fog: false,
+  }));
+  galaxy.renderOrder = 2;
+  scene.add(galaxy);
+
   // Procedural seamless normal map keeps the water self-contained and avoids external assets.
   const normalCanvas = document.createElement('canvas');
   normalCanvas.width = 256;
@@ -315,6 +351,8 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     moonDisc.visible = sunDirection.y < 0.02;
     stars.material.opacity = THREE.MathUtils.smoothstep(1 - daylight, 0.18, 0.78);
     stars.visible = stars.material.opacity > 0.01;
+    galaxy.material.opacity = THREE.MathUtils.smoothstep(-sunHeight, 0.05, 0.42) * 0.48;
+    galaxy.visible = galaxy.material.opacity > 0.01;
     sun.intensity = 0.08 + daylight * 2.7;
     sun.color.setHSL(0.09 - daylight * 0.045, 0.58, 0.6 + daylight * 0.08);
     hemi.intensity = 0.18 + daylight * 1.7;
