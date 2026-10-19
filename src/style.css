@@ -87,6 +87,13 @@ button:focus-visible, input:focus-visible { outline: 1px solid var(--accent); ou
 .cardinal-w { left: -2px; top: calc(50% - 7.5px); }
 .minimap-rim { fill: #07110e; stroke: #d9c18a85; stroke-width: 1.2; }
 .minimap-island { stroke: #a7ad7b; stroke-width: 1; stroke-linejoin: round; }
+.minimap-height-layer { stroke: none; }
+.minimap-layer-water { fill: #0a201f; }
+.minimap-layer-shore { fill: #a29473; }
+.minimap-layer-lowland { fill: #647b55; }
+.minimap-layer-forest { fill: #78875d; }
+.minimap-layer-upland { fill: #777e70; }
+.minimap-layer-summit { fill: #b7b3a1; }
 .minimap-contour { fill: none; stroke: #d7d0a4; stroke-width: .75; opacity: .52; }
 .minimap-contour.contour-outer { stroke: #d5c79b; opacity: .36; }
 .minimap-contour.contour-high { stroke: #e3ddc2; stroke-width: 1; opacity: .72; }
