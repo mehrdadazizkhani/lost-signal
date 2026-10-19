@@ -578,6 +578,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
       renderer.dispose();
       waterNormals.dispose();
       lunarTexture.dispose();
+      foliageTexture.dispose();
       renderer.domElement.remove();
       scene.traverse((object) => {
         if (object.geometry) object.geometry.dispose();
