@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { Tree, TreePreset } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
@@ -307,7 +308,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   }
 
   const treeData = [];
-  for (let attempt = 0; attempt < 5200 && treeData.length < 390; attempt += 1) {
+  for (let attempt = 0; attempt < 5200 && treeData.length < 135; attempt += 1) {
     const x = (Math.random() - 0.5) * 232;
     const z = (Math.random() - 0.5) * 258;
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
@@ -360,93 +361,42 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     });
   }
 
-  const trunkGeometry = new THREE.CylinderGeometry(0.68, 1, 1, 7, 2);
-  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x51402e, roughness: 1 });
-  const trunkInstances = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, treeData.length);
-  trunkInstances.castShadow = true;
-  trunkInstances.receiveShadow = true;
-
-  // Fluffy foliage inspired by douges.dev's Three.js tree article:
-  // use alpha-cutout foliage cards crossed in 3 directions, rather than stacked cones.
-  // This stays on built-in materials so it works with the WebGPU renderer.
-  const foliageCanvas = document.createElement('canvas');
-  foliageCanvas.width = 256;
-  foliageCanvas.height = 256;
-  const foliageContext = foliageCanvas.getContext('2d');
-  foliageContext.clearRect(0, 0, 256, 256);
-  foliageContext.fillStyle = '#ffffff';
-  // Layered irregular clumps create a soft, leafy silhouette with a transparent edge.
-  const foliageClumps = [
-    [128, 57, 34, 38], [94, 76, 31, 34], [161, 78, 32, 36],
-    [72, 108, 29, 32], [111, 104, 37, 39], [151, 108, 37, 39], [185, 109, 26, 31],
-    [87, 139, 34, 32], [128, 139, 41, 39], [169, 141, 34, 32],
-    [108, 171, 32, 29], [148, 171, 32, 29],
+  // Procedural EZ-Tree forest with distance-based LODs.
+  const treePalette = [
+    { bark: 0x51402e, leaves: 0x294633 },
+    { bark: 0x594632, leaves: 0x34513a },
+    { bark: 0x493d2c, leaves: 0x405c40 },
+    { bark: 0x5b4934, leaves: 0x263d30 },
   ];
-  foliageClumps.forEach(([x, y, rx, ry], index) => {
-    foliageContext.globalAlpha = 0.9 + (index % 3) * 0.05;
-    foliageContext.beginPath();
-    foliageContext.ellipse(x, y, rx, ry, ((index % 4) - 1.5) * 0.08, 0, Math.PI * 2);
-    foliageContext.fill();
-  });
-  foliageContext.globalAlpha = 1;
-  const foliageTexture = new THREE.CanvasTexture(foliageCanvas);
-  foliageTexture.colorSpace = THREE.SRGBColorSpace;
-  foliageTexture.magFilter = THREE.LinearFilter;
-  foliageTexture.minFilter = THREE.LinearMipmapLinearFilter;
-  const foliageGeometry = new THREE.PlaneGeometry(1, 1);
-  const foliageMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    map: foliageTexture,
-    transparent: true,
-    alphaTest: 0.38,
-    side: THREE.DoubleSide,
-    roughness: 1,
-  });
-  const foliageMeshes = [0, 1, 2].map(() => {
-    const mesh = new THREE.InstancedMesh(foliageGeometry, foliageMaterial, treeData.length);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
-    return mesh;
-  });
-  const dummy = new THREE.Object3D();
-  const foliagePalette = [0x1d382b, 0x294633, 0x34513a, 0x405c40, 0x263d30, 0x496344];
-  const tempColor = new THREE.Color();
-
   treeData.forEach((tree, index) => {
-    dummy.position.set(tree.x, tree.height + tree.trunkHeight * 0.5, tree.z);
-    dummy.rotation.set(0, tree.yaw, 0);
-    dummy.scale.set(0.15 * tree.scale, tree.trunkHeight, 0.15 * tree.scale);
-    dummy.updateMatrix();
-    trunkInstances.setMatrixAt(index, dummy.matrix);
-
-    const paletteColor = new THREE.Color(foliagePalette[Math.floor(Math.random() * foliagePalette.length)]);
-    const treeVariation = 0.86 + Math.random() * 0.32;
-    // Crossed cards keep the crown visibly full from most walking angles.
-    foliageMeshes.forEach((mesh, planeIndex) => {
-      dummy.position.set(
-        tree.x,
-        tree.height + tree.trunkHeight * (0.79 + (treeVariation - 1) * 0.08),
-        tree.z
-      );
-      dummy.rotation.set(0, tree.yaw + planeIndex * Math.PI / 3, 0);
-      dummy.scale.set(
-        tree.crownRadius * 2.45 * treeVariation,
-        tree.trunkHeight * (1.56 + treeVariation * 0.08),
-        1
-      );
-      dummy.updateMatrix();
-      mesh.setMatrixAt(index, dummy.matrix);
-      tempColor.copy(paletteColor).multiplyScalar(0.88 + planeIndex * 0.045 + Math.random() * 0.08);
-      mesh.setColorAt(index, tempColor);
+    const presetName = index % 5 === 0 ? 'Oak Small' : index % 7 === 0 ? 'Ash Small' : 'Pine Small';
+    const generatedTree = new Tree();
+    generatedTree.options.copy(TreePreset[presetName]);
+    generatedTree.options.seed = 1000 + index * 7919;
+    generatedTree.options.bark.textured = false;
+    generatedTree.options.bark.tint = treePalette[index % treePalette.length].bark;
+    generatedTree.options.leaves.map = null;
+    generatedTree.options.leaves.tint = treePalette[index % treePalette.length].leaves;
+    generatedTree.options.leaves.alphaTest = 0.35;
+    generatedTree.options.trellis.enabled = false;
+    generatedTree.generateLODs([
+      { distance: 0, detail: {} },
+      { distance: 34, hysteresis: 0.06, detail: { sectionStride: 3, segmentFactor: 0.7, leafStride: 2, leafScale: 1.25 } },
+      { distance: 78, hysteresis: 0.06, detail: { sectionStride: 6, segmentFactor: 0.42, leafStride: 3, leafScale: 1.35, billboard: 'single' } },
+    ]);
+    generatedTree.traverse((object) => {
+      if (!object.isMesh || !object.material) return;
+      object.castShadow = true;
+      object.receiveShadow = true;
+      // EZ-Tree's wind patch uses WebGL GLSL; use its standard material on WebGPU.
+      object.material.onBeforeCompile = () => {};
+      object.material.customProgramCacheKey = () => 'ez-tree-webgpu-static';
+      object.material.needsUpdate = true;
     });
-  });
-  trunkInstances.instanceMatrix.needsUpdate = true;
-  scene.add(trunkInstances);
-  foliageMeshes.forEach((mesh) => {
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    scene.add(mesh);
+    generatedTree.scale.setScalar(0.25 + tree.scale * 0.16);
+    generatedTree.position.set(tree.x, tree.height, tree.z);
+    generatedTree.rotation.y = tree.yaw;
+    scene.add(generatedTree);
   });
 
   // Dense, low-cost fluffy grass inspired by the FluffyGrass reference.
