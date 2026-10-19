@@ -299,13 +299,6 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   // Each tree has a tapered trunk and four overlapping foliage tiers instead of one
   // simple cone, giving the silhouette a more natural evergreen shape.
   const obstacles = [];
-  function distanceToSegment2D(px, pz, a, b) {
-    const dx = b.x - a.x;
-    const dz = b.z - a.z;
-    const lengthSq = dx * dx + dz * dz;
-    const t = lengthSq ? THREE.MathUtils.clamp(((px - a.x) * dx + (pz - a.z) * dz) / lengthSq, 0, 1) : 0;
-    return Math.hypot(px - (a.x + dx * t), pz - (a.z + dz * t));
-  }
   function nearTrail(x, z, padding = 4) {
     for (let i = 0; i < trailWaypoints.length - 1; i += 1) {
       if (distanceToSegment2D(x, z, trailWaypoints[i], trailWaypoints[i + 1]) < padding) return true;
@@ -314,17 +307,17 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   }
 
   const treeData = [];
-  for (let attempt = 0; attempt < 2200 && treeData.length < 210; attempt += 1) {
-    const x = (Math.random() - 0.5) * 136;
-    const z = (Math.random() - 0.5) * 145;
+  for (let attempt = 0; attempt < 5200 && treeData.length < 390; attempt += 1) {
+    const x = (Math.random() - 0.5) * 232;
+    const z = (Math.random() - 0.5) * 258;
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
     const height = groundHeight(x, z);
     const mountainDistance = Math.hypot(x - mountain.x, z - mountain.z);
-    if (radial > 0.83 || height > 17 || height < -0.2) continue;
-    if (nearTrail(x, z, 5.1) || Math.hypot(x, z - 18) < 9) continue;
-    if (Math.hypot(x - 2, z + 43) < 11) continue;
+    if (radial > 0.86 || height > 23 || height < -0.2) continue;
+    if (nearTrail(x, z, 2.8) || Math.hypot(x, z - 18) < 11) continue;
+    if (Math.hypot(x - 9, z + 72) < 13) continue;
     // Keep the forest concentrated around the mountain's lower slopes and coast.
-    if (mountainDistance > 58 && Math.random() > 0.42) continue;
+    if (mountainDistance > 83 && Math.random() > 0.42) continue;
     // Avoid dense clumps and keep enough space to navigate between trunks.
     const minSpacing = 2.7 + Math.random() * 1.2;
     if (treeData.some((tree) => Math.hypot(x - tree.x, z - tree.z) < minSpacing)) continue;
@@ -478,7 +471,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     roughness: 1,
     metalness: 0,
   });
-  const grassCount = 7600;
+  const grassCount = 14500;
   const grassInstances = new THREE.InstancedMesh(grassTuftGeometry, grassTuftMaterial, grassCount);
   grassInstances.castShadow = false;
   grassInstances.receiveShadow = false;
@@ -492,12 +485,12 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   let placedGrass = 0;
   for (let attempt = 0; attempt < grassCount * 7 && placedGrass < grassCount; attempt += 1) {
     const x = (Math.random() - 0.5) * 145;
-    const z = (Math.random() - 0.5) * 154;
+    const z = (Math.random() - 0.5) * 275;
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
     const height = groundHeight(x, z);
-    if (radial > 0.84 || height < 0.05 || height > 12.5) continue;
-    if (nearTrail(x, z, 2.15) || Math.hypot(x, z - 18) < 6.5) continue;
-    if (Math.hypot(x - 2, z + 43) < 8) continue;
+    if (radial > 0.87 || height < 0.05 || height > 15.5) continue;
+    if (nearTrail(x, z, 1.2) || Math.hypot(x, z - 18) < 7.5) continue;
+    if (Math.hypot(x - 9, z + 72) < 10) continue;
     if (treeData.some((tree) => Math.hypot(x - tree.x, z - tree.z) < 1.05 + tree.crownRadius * 0.18)) continue;
     // Avoid very steep slopes; grass is concentrated on the lower, walkable island.
     const slopeX = (groundHeight(x + 0.35, z) - groundHeight(x - 0.35, z)) / 0.7;
