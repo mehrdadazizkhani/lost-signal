@@ -199,43 +199,75 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
 
   // A continuous island mesh tapers below sea level at the shoreline.
   // The same height function drives the rendered terrain and player elevation.
-  const islandRadiusX = 76;
-  const islandRadiusZ = 81;
-  const mountain = { x: -18, z: -30 };
+  const islandRadiusX = 128;
+  const islandRadiusZ = 142;
+  const mountain = { x: -39, z: -52 };
+  const ridgeAngle = -0.48;
   const smoothstep = (a, b, value) => {
     const t = THREE.MathUtils.clamp((value - a) / (b - a), 0, 1);
     return t * t * (3 - 2 * t);
   };
+  // This foot-worn route is painted into the terrain, not built as a raised mesh.
+  const trailWaypoints = [
+    [0, 18], [7, 1], [2, -18], [-8, -34], [-18, -45], [-28, -51], [mountain.x, mountain.z],
+  ].map(([x, z]) => new THREE.Vector3(x, 0, z));
+  function distanceToSegment2D(px, pz, a, b) {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const lengthSq = dx * dx + dz * dz;
+    const t = lengthSq ? THREE.MathUtils.clamp(((px - a.x) * dx + (pz - a.z) * dz) / lengthSq, 0, 1) : 0;
+    return Math.hypot(px - (a.x + dx * t), pz - (a.z + dz * t));
+  }
+  function wornPathDistance(x, z) {
+    let distance = Infinity;
+    for (let i = 0; i < trailWaypoints.length - 1; i += 1) {
+      distance = Math.min(distance, distanceToSegment2D(x, z, trailWaypoints[i], trailWaypoints[i + 1]));
+    }
+    return distance + Math.sin(x * 0.34 + z * 0.21) * 0.22 + Math.sin(z * 0.53 - x * 0.17) * 0.12;
+  }
   function groundHeight(x, z) {
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
-    const rolling = Math.sin(x * 0.115 + z * 0.073) * 0.28 + Math.sin(z * 0.19 - x * 0.08) * 0.16;
-    const inland = 0.45 + Math.max(0, 1 - radial) * 1.35 + rolling;
-    const shoreDrop = smoothstep(0.83, 1.13, radial) * 4.2;
-    const mountainDistance = ((x - mountain.x) ** 2) / 540 + ((z - mountain.z) ** 2) / 760;
-    const peak = 31 * Math.exp(-mountainDistance * 1.15);
-    return inland - shoreDrop + peak;
+    const broad = Math.sin(x * 0.027 + z * 0.019) * 1.8
+      + Math.sin(z * 0.041 - x * 0.033) * 1.05
+      + Math.cos(x * 0.061 + z * 0.047) * 0.52;
+    const fine = Math.sin(x * 0.17 + Math.sin(z * 0.12) * 1.7) * 0.22 + Math.cos(z * 0.21 - x * 0.13) * 0.17;
+    const shoreDrop = smoothstep(0.87, 1.12, radial) * 7.5;
+    const dx = x - mountain.x, dz = z - mountain.z;
+    const along = dx * Math.cos(ridgeAngle) + dz * Math.sin(ridgeAngle);
+    const across = -dx * Math.sin(ridgeAngle) + dz * Math.cos(ridgeAngle);
+    const ridge = 39 * Math.exp(-(along * along) / 1900 - (across * across) / 360);
+    const shoulder = 13 * Math.exp(-(((x + 68) ** 2) / 700 + ((z + 18) ** 2) / 1200));
+    const knoll = 8 * Math.exp(-(((x - 46) ** 2) / 440 + ((z + 62) ** 2) / 500));
+    const pathInfluence = 1 - smoothstep(0.25, 2.4, Math.max(0, wornPathDistance(x, z)));
+    return 0.7 + Math.max(0, 1 - radial) * 2.6 + (broad + fine) * (1 - pathInfluence * 0.24) - shoreDrop + ridge + shoulder + knoll;
   }
 
-  const terrainGeometry = new THREE.PlaneGeometry(196, 210, 160, 170);
+  const terrainGeometry = new THREE.PlaneGeometry(330, 360, 280, 300);
   terrainGeometry.rotateX(-Math.PI / 2);
   const terrainPositions = terrainGeometry.attributes.position;
   const terrainColors = [];
-  const grassLow = new THREE.Color(0x59664a);
-  const grassHigh = new THREE.Color(0x87906b);
-  const rockLow = new THREE.Color(0x66675d);
-  const rockHigh = new THREE.Color(0xaaa99a);
-  const beachColor = new THREE.Color(0x8d8467);
-  const vertexColor = new THREE.Color();
+  const grassLow = new THREE.Color(0x526747), grassHigh = new THREE.Color(0x7f8c61);
+  const mossColor = new THREE.Color(0x66734b), rockLow = new THREE.Color(0x575a56);
+  const rockHigh = new THREE.Color(0xaaa99d), screeColor = new THREE.Color(0x77776d);
+  const beachColor = new THREE.Color(0x9b8c70), wornSoilColor = new THREE.Color(0x76674f);
+  const vertexColor = new THREE.Color(), ridgeColor = new THREE.Color();
   for (let i = 0; i < terrainPositions.count; i += 1) {
-    const x = terrainPositions.getX(i);
-    const z = terrainPositions.getZ(i);
+    const x = terrainPositions.getX(i), z = terrainPositions.getZ(i);
     const height = groundHeight(x, z);
     terrainPositions.setY(i, height);
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
-    const rockAmount = smoothstep(7, 19, height) * 0.9;
-    vertexColor.copy(grassLow).lerp(grassHigh, THREE.MathUtils.clamp(0.3 + height * 0.018, 0, 0.8));
-    vertexColor.lerp(rockLow.clone().lerp(rockHigh, THREE.MathUtils.clamp((height - 18) / 16, 0, 1)), rockAmount);
-    vertexColor.lerp(beachColor, 1 - smoothstep(0.78, 0.98, radial));
+    const dx = x - mountain.x, dz = z - mountain.z;
+    const across = -dx * Math.sin(ridgeAngle) + dz * Math.cos(ridgeAngle);
+    const exposure = THREE.MathUtils.clamp((height - 9) / 30 + Math.abs(across) * 0.006, 0, 1);
+    const rockAmount = smoothstep(10, 27, height) * 0.78 + smoothstep(0.55, 1, Math.abs(across) / 31) * exposure * 0.22;
+    const noise = (Math.sin(x * 0.19 + z * 0.13) + Math.cos(z * 0.24 - x * 0.11)) * 0.045;
+    vertexColor.copy(grassLow).lerp(grassHigh, THREE.MathUtils.clamp(0.25 + height * 0.014 + noise, 0, 0.9));
+    vertexColor.lerp(mossColor, smoothstep(1.5, 7, height) * (0.16 + Math.max(0, Math.sin(x * 0.07) * Math.cos(z * 0.09)) * 0.18));
+    ridgeColor.copy(rockLow).lerp(rockHigh, THREE.MathUtils.clamp((height - 14) / 35 + noise, 0, 1));
+    ridgeColor.lerp(screeColor, smoothstep(0.55, 1, Math.abs(across) / 38) * 0.25);
+    vertexColor.lerp(ridgeColor, THREE.MathUtils.clamp(rockAmount, 0, 0.94));
+    vertexColor.lerp(beachColor, 1 - smoothstep(0.79, 0.99, radial));
+    const worn = 1 - smoothstep(0.75, 2.8, Math.max(0, wornPathDistance(x, z)));
+    vertexColor.lerp(wornSoilColor, worn * (0.42 + Math.sin(x * 0.7 + z * 0.5) * 0.07));
     terrainColors.push(vertexColor.r, vertexColor.g, vertexColor.b);
   }
   terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(terrainColors, 3));
@@ -245,23 +277,8 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   terrain.castShadow = true;
   scene.add(terrain);
 
-  // The island has exactly one marked footpath, winding from the landing shore
-  // up the mountain to the summit.
-  const trailWaypoints = [
-    [0, 18], [2, 7], [-1, -3], [-6, -13], [-3, -20], [-10, -25], [mountain.x, mountain.z],
-  ].map(([x, z]) => new THREE.Vector3(x, groundHeight(x, z) + 0.14, z));
-  const roughTrailCurve = new THREE.CatmullRomCurve3(trailWaypoints);
-  const trailPoints = roughTrailCurve.getPoints(150);
-  trailPoints.forEach((point) => { point.y = groundHeight(point.x, point.z) + 0.14; });
-  const trail = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(trailPoints), 150, 1.25, 7, false),
-    new THREE.MeshStandardMaterial({ color: 0x8a7958, roughness: 1 })
-  );
-  trail.receiveShadow = true;
-  scene.add(trail);
-
   const beacon = new THREE.Group();
-  beacon.position.set(2, groundHeight(2, -43), -43);
+  beacon.position.set(9, groundHeight(9, -72), -72);
   scene.add(beacon);
   const metal = new THREE.MeshStandardMaterial({ color: 0x323c3a, roughness: 0.7 });
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.35, 7, 8), metal);
