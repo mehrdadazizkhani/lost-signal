@@ -19,7 +19,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   sky.material.uniforms.mieDirectionalG.value = 0.82;
   scene.add(sky);
 
-  const camera = new THREE.PerspectiveCamera(72, container.clientWidth / Math.max(container.clientHeight, 1), 0.1, 500);
+  const camera = new THREE.PerspectiveCamera(72, container.clientWidth / Math.max(container.clientHeight, 1), 0.1, 1000000);
   camera.rotation.order = 'YXZ';
   camera.position.set(0, 2, 18);
 
