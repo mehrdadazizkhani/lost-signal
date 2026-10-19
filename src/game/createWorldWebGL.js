@@ -346,12 +346,13 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
     { bark: 0x493d2c, leaves: 0x405c40 },
     { bark: 0x5b4934, leaves: 0x263d30 },
   ];
+  const treePresets = ['Ash Large', 'Bush 1', 'Bush 3', 'Oak Large'];
   for (let i = 0; i < 100; i += 1) {
     const x = (Math.random() - 0.5) * 120;
     const z = (Math.random() - 0.5) * 125;
     if (Math.hypot(x, z - 16) < 13 || Math.hypot(x - 2, z + 43) < 10) continue;
     const scale = 0.7 + Math.random() * 0.7;
-    const presetName = i % 5 === 0 ? 'Oak Small' : i % 7 === 0 ? 'Ash Small' : 'Pine Small';
+    const presetName = treePresets[i % treePresets.length];
     const tree = new Tree();
     tree.loadPreset(presetName);
     tree.options.seed = 2000 + i * 7919;
