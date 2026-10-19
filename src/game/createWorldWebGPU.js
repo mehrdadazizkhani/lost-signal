@@ -197,19 +197,68 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   ocean.renderOrder = 0;
   scene.add(ocean);
 
-  const terrainMaterial = new THREE.MeshStandardMaterial({ color: 0x536b45, roughness: 1 });
-  const terrain = new THREE.Mesh(new THREE.CircleGeometry(78, 96), terrainMaterial);
-  terrain.rotation.x = -Math.PI / 2;
-  terrain.position.y = -0.3;
-  terrain.scale.set(1, 1.08, 0.18);
+  // A continuous island mesh tapers below sea level at the shoreline.
+  // The same height function drives the rendered terrain and player elevation.
+  const islandRadiusX = 76;
+  const islandRadiusZ = 81;
+  const mountain = { x: -18, z: -30 };
+  const smoothstep = (a, b, value) => {
+    const t = THREE.MathUtils.clamp((value - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+  function groundHeight(x, z) {
+    const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
+    const rolling = Math.sin(x * 0.115 + z * 0.073) * 0.28 + Math.sin(z * 0.19 - x * 0.08) * 0.16;
+    const inland = 0.45 + Math.max(0, 1 - radial) * 1.35 + rolling;
+    const shoreDrop = smoothstep(0.83, 1.13, radial) * 4.2;
+    const mountainDistance = ((x - mountain.x) ** 2) / 540 + ((z - mountain.z) ** 2) / 760;
+    const peak = 31 * Math.exp(-mountainDistance * 1.15);
+    return inland - shoreDrop + peak;
+  }
+
+  const terrainGeometry = new THREE.PlaneGeometry(196, 210, 160, 170);
+  terrainGeometry.rotateX(-Math.PI / 2);
+  const terrainPositions = terrainGeometry.attributes.position;
+  const terrainColors = [];
+  const grassLow = new THREE.Color(0x59664a);
+  const grassHigh = new THREE.Color(0x87906b);
+  const rockLow = new THREE.Color(0x66675d);
+  const rockHigh = new THREE.Color(0xaaa99a);
+  const beachColor = new THREE.Color(0x8d8467);
+  const vertexColor = new THREE.Color();
+  for (let i = 0; i < terrainPositions.count; i += 1) {
+    const x = terrainPositions.getX(i);
+    const z = terrainPositions.getZ(i);
+    const height = groundHeight(x, z);
+    terrainPositions.setY(i, height);
+    const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
+    const rockAmount = smoothstep(7, 19, height) * 0.9;
+    vertexColor.copy(grassLow).lerp(grassHigh, THREE.MathUtils.clamp(0.3 + height * 0.018, 0, 0.8));
+    vertexColor.lerp(rockLow.clone().lerp(rockHigh, THREE.MathUtils.clamp((height - 18) / 16, 0, 1)), rockAmount);
+    vertexColor.lerp(beachColor, 1 - smoothstep(0.78, 0.98, radial));
+    terrainColors.push(vertexColor.r, vertexColor.g, vertexColor.b);
+  }
+  terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(terrainColors, 3));
+  terrainGeometry.computeVertexNormals();
+  const terrain = new THREE.Mesh(terrainGeometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
   terrain.receiveShadow = true;
+  terrain.castShadow = true;
   scene.add(terrain);
 
-  const ridge = new THREE.Mesh(new THREE.ConeGeometry(22, 20, 7), new THREE.MeshStandardMaterial({ color: 0x405a40, roughness: 1 }));
-  ridge.position.set(-18, 8, -36);
-  ridge.castShadow = true;
-  ridge.receiveShadow = true;
-  scene.add(ridge);
+  // The island has exactly one marked footpath, winding from the landing shore
+  // up the mountain to the summit.
+  const trailWaypoints = [
+    [0, 18], [2, 7], [-1, -3], [-6, -13], [-3, -20], [-10, -25], [mountain.x, mountain.z],
+  ].map(([x, z]) => new THREE.Vector3(x, groundHeight(x, z) + 0.14, z));
+  const roughTrailCurve = new THREE.CatmullRomCurve3(trailWaypoints);
+  const trailPoints = roughTrailCurve.getPoints(150);
+  trailPoints.forEach((point) => { point.y = groundHeight(point.x, point.z) + 0.14; });
+  const trail = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(trailPoints), 150, 1.25, 7, false),
+    new THREE.MeshStandardMaterial({ color: 0x8a7958, roughness: 1 })
+  );
+  trail.receiveShadow = true;
+  scene.add(trail);
 
   const beacon = new THREE.Group();
   beacon.position.set(2, groundHeight(2, -43), -43);
@@ -281,6 +330,8 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     placedTrees += 1;
   }
 
+  camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
+
   const audio = createAudio();
   const keys = new Set();
   const playerRadius = 0.55;
@@ -351,6 +402,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     const oldZ = camera.position.z;
     if (canMoveTo(nextX, camera.position.z)) camera.position.x = nextX;
     if (canMoveTo(camera.position.x, nextZ)) camera.position.z = nextZ;
+    camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
     camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
     const actualDistance = Math.hypot(camera.position.x - oldX, camera.position.z - oldZ);
     if (actualDistance > 0.001) {
