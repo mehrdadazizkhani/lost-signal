@@ -43,53 +43,198 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   moon.position.set(45, 35, 25);
   scene.add(moon);
 
-  // Lightweight sky details: shared cloud texture, sprites, sun, moon and stars.
-  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(3.8, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffe0a1, fog: false }));
+  // Procedural sky layers: atmospheric scattering, volumetric-looking cloud field,
+  // a structured Milky Way band, and a twinkling star catalog. All use a few draw calls.
+  const sunDisc = new THREE.Mesh(
+    new THREE.SphereGeometry(3.8, 20, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffe0a1, fog: false, depthWrite: false })
+  );
+  sunDisc.renderOrder = 2;
   scene.add(sunDisc);
-  const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(2.8, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8efff, fog: false }));
+
+  const moonDisc = new THREE.Mesh(
+    new THREE.SphereGeometry(2.35, 32, 24),
+    new THREE.MeshBasicMaterial({ color: 0xdce7ff, fog: false, depthWrite: false })
+  );
+  moonDisc.renderOrder = 4;
   scene.add(moonDisc);
+
   const starPositions = [];
-  for (let i = 0; i < 420; i += 1) {
-    const angle = Math.random() * Math.PI * 2;
-    const elevation = 0.08 + Math.random() * 1.35;
-    const radius = 330;
-    starPositions.push(Math.cos(angle) * Math.cos(elevation) * radius, Math.sin(elevation) * radius, Math.sin(angle) * Math.cos(elevation) * radius);
+  const starSizes = [];
+  const starPhases = [];
+  const starColors = [];
+  for (let i = 0; i < 3200; i += 1) {
+    const azimuth = Math.random() * Math.PI * 2;
+    const y = 0.015 + Math.random() * 0.985;
+    const ring = Math.sqrt(1 - y * y);
+    const radius = 365;
+    starPositions.push(Math.cos(azimuth) * ring * radius, y * radius, Math.sin(azimuth) * ring * radius);
+    starSizes.push(0.65 + Math.pow(Math.random(), 5) * 2.4);
+    starPhases.push(Math.random() * Math.PI * 2);
+    const temperature = Math.random();
+    const starColor = temperature < 0.12
+      ? new THREE.Color(0xffc58f)
+      : temperature > 0.84
+        ? new THREE.Color(0xaecbff)
+        : new THREE.Color(0xf0f2ff);
+    starColors.push(starColor.r, starColor.g, starColor.b);
   }
   const starGeometry = new THREE.BufferGeometry();
   starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
-  const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xe1e9ff, size: 1.15, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false }));
+  starGeometry.setAttribute('aSize', new THREE.Float32BufferAttribute(starSizes, 1));
+  starGeometry.setAttribute('aPhase', new THREE.Float32BufferAttribute(starPhases, 1));
+  starGeometry.setAttribute('color', new THREE.Float32BufferAttribute(starColors, 3));
+  const stars = new THREE.Points(starGeometry, new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uNight: { value: 0 } },
+    vertexShader: `
+      attribute float aSize;
+      attribute float aPhase;
+      attribute vec3 color;
+      uniform float uTime;
+      varying vec3 vColor;
+      varying float vTwinkle;
+      void main() {
+        vColor = color;
+        vTwinkle = 0.68 + 0.32 * sin(uTime * (0.65 + aPhase * 0.12) + aPhase);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aSize * (350.0 / max(1.0, -mvPosition.z));
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform float uNight;
+      varying vec3 vColor;
+      varying float vTwinkle;
+      void main() {
+        vec2 p = gl_PointCoord - vec2(0.5);
+        float r = length(p);
+        float core = 1.0 - smoothstep(0.03, 0.22, r);
+        float halo = exp(-r * 13.0) * 0.32;
+        float alpha = (core + halo) * vTwinkle * uNight;
+        if (alpha < 0.015) discard;
+        gl_FragColor = vec4(vColor, alpha);
+      }
+    `
+  }));
+  stars.renderOrder = 3;
   scene.add(stars);
 
-  const cloudCanvas = document.createElement('canvas');
-  cloudCanvas.width = 256;
-  cloudCanvas.height = 128;
-  const cloudContext = cloudCanvas.getContext('2d');
-  for (let i = 0; i < 110; i += 1) {
-    const x = Math.random() * 256;
-    const y = 22 + Math.random() * 84;
-    const radius = 10 + Math.random() * 34;
-    const gradient = cloudContext.createRadialGradient(x, y, 1, x, y, radius);
-    gradient.addColorStop(0, 'rgba(255,255,255,.88)');
-    gradient.addColorStop(0.42, 'rgba(255,255,255,.62)');
-    gradient.addColorStop(0.72, 'rgba(255,255,255,.20)');
-    gradient.addColorStop(1, 'rgba(255,255,255,0)');
-    cloudContext.fillStyle = gradient;
-    cloudContext.fillRect(x - radius, y - radius, radius * 2, radius * 2);
-  }
-  const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
-  cloudTexture.colorSpace = THREE.SRGBColorSpace;
-  const clouds = [];
-  for (let i = 0; i < 22; i += 1) {
-    const cloud = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTexture, color: 0xffffff, transparent: true, opacity: 0.88, depthWrite: false, fog: false }));
-    const angle = (i / 22) * Math.PI * 2;
-    const radius = 92 + Math.random() * 32;
-    cloud.position.set(Math.cos(angle) * radius, 38 + Math.random() * 24, Math.sin(angle) * radius);
-    cloud.scale.set(68 + Math.random() * 56, 25 + Math.random() * 22, 1);
-    cloud.userData = { speed: 0.7 + Math.random() * 0.45, phase: Math.random() * Math.PI * 2, originX: cloud.position.x };
-    scene.add(cloud);
-    clouds.push(cloud);
-  }
+  const milkyWay = new THREE.Mesh(
+    new THREE.SphereGeometry(405, 64, 48),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+      uniforms: { uNight: { value: 0 }, uTime: { value: 0 } },
+      vertexShader: `
+        varying vec3 vDirection;
+        void main() {
+          vDirection = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uNight;
+        uniform float uTime;
+        varying vec3 vDirection;
+        float hash31(vec3 p) {
+          p = fract(p * 0.1031);
+          p += dot(p, p.yzx + 33.33);
+          return fract((p.x + p.y) * p.z);
+        }
+        float noise3(vec3 p) {
+          vec3 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(hash31(i), hash31(i + vec3(1,0,0)), f.x),
+                         mix(hash31(i + vec3(0,1,0)), hash31(i + vec3(1,1,0)), f.x), f.y),
+                     mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
+                         mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y), f.z);
+        }
+        float fbm(vec3 p) {
+          float v = 0.0, a = 0.5;
+          for (int i = 0; i < 4; i++) { v += noise3(p) * a; p *= 2.03; a *= 0.5; }
+          return v;
+        }
+        void main() {
+          vec3 d = normalize(vDirection);
+          vec3 galacticNormal = normalize(vec3(0.31, 0.83, -0.46));
+          float band = exp(-pow(abs(dot(d, galacticNormal)) * 7.4, 2.0));
+          float structure = fbm(d * vec3(34.0, 25.0, 34.0) + vec3(0.0, 0.0, uTime * 0.00015));
+          float dust = fbm(d * vec3(79.0, 62.0, 79.0));
+          float core = pow(max(dot(d, normalize(vec3(-0.64, 0.2, -0.74))), 0.0), 5.0);
+          float nebula = smoothstep(0.28, 0.72, structure) * (0.52 + 0.72 * dust);
+          nebula = max(nebula, core * 0.8);
+          float alpha = band * nebula * uNight * 0.72;
+          vec3 color = mix(vec3(0.30, 0.39, 0.62), vec3(0.83, 0.73, 0.62), core * 0.7 + dust * 0.12);
+          color += vec3(0.12, 0.16, 0.28) * structure;
+          gl_FragColor = vec4(color, alpha);
+        }
+      `
+    })
+  );
+  milkyWay.renderOrder = 1;
+  scene.add(milkyWay);
 
+  const cloudMaterial = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uDaylight: { value: 1 }, uSunHeight: { value: 0.5 } },
+    vertexShader: `
+      varying vec3 vDirection;
+      void main() {
+        vDirection = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uDaylight;
+      uniform float uSunHeight;
+      varying vec3 vDirection;
+      float hash31(vec3 p) {
+        p = fract(p * 0.1031);
+        p += dot(p, p.yzx + 33.33);
+        return fract((p.x + p.y) * p.z);
+      }
+      float noise3(vec3 p) {
+        vec3 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash31(i), hash31(i + vec3(1,0,0)), f.x),
+                       mix(hash31(i + vec3(0,1,0)), hash31(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
+                       mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      float fbm(vec3 p) {
+        float v = 0.0, a = 0.5;
+        for (int i = 0; i < 5; i++) { v += noise3(p) * a; p *= 2.02; a *= 0.5; }
+        return v;
+      }
+      void main() {
+        vec3 d = normalize(vDirection);
+        vec3 p = d * vec3(16.0, 8.0, 16.0) + vec3(uTime * 0.004, 0.0, uTime * 0.0022);
+        float broad = fbm(p);
+        float detail = fbm(p * 2.6 + vec3(7.1, 2.3, 4.8));
+        float density = smoothstep(0.43, 0.64, broad + detail * 0.20);
+        density *= smoothstep(-0.12, 0.12, d.y + 0.2);
+        float alpha = density * (0.22 + uDaylight * 0.57);
+        vec3 nightColor = vec3(0.025, 0.045, 0.085);
+        vec3 duskColor = vec3(0.72, 0.32, 0.23);
+        vec3 dayColor = vec3(0.88, 0.91, 0.94);
+        float sunset = 1.0 - smoothstep(0.02, 0.35, abs(uSunHeight));
+        vec3 litColor = mix(dayColor, duskColor, sunset * 0.82);
+        vec3 cloudColor = mix(nightColor, litColor, uDaylight);
+        float silverLining = pow(max(0.0, 1.0 - abs(density - 0.5) * 2.0), 3.0) * uDaylight * 0.12;
+        cloudColor += vec3(silverLining);
+        gl_FragColor = vec4(cloudColor, alpha);
+      }
+    `
+  });
+  const cloudDome = new THREE.Mesh(new THREE.SphereGeometry(292, 64, 48), cloudMaterial);
+  cloudDome.renderOrder = 2;
+  scene.add(cloudDome);
   const oceanMaterial = new THREE.MeshStandardMaterial({ color: 0x315e69, roughness: 0.24, metalness: 0.12 });
   const ocean = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), oceanMaterial);
   ocean.rotation.x = -Math.PI / 2;
