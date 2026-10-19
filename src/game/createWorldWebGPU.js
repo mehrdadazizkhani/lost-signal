@@ -409,6 +409,103 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     scene.add(mesh);
   });
 
+  // Dense, low-cost fluffy grass inspired by the FluffyGrass reference.
+  // Procedural curved blade tufts keep the scene self-contained and WebGPU-compatible.
+  const grassPositions = [];
+  const grassColors = [];
+  const grassIndices = [];
+  const grassPalette = [0x405b32, 0x526d3b, 0x617b43, 0x71894b, 0x344d2d];
+  const grassColor = new THREE.Color();
+  const bladeCount = 9;
+  for (let blade = 0; blade < bladeCount; blade += 1) {
+    const angle = blade * Math.PI * (3 - Math.sqrt(5));
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    const width = 0.045 + (blade % 3) * 0.009;
+    const height = 0.34 + (blade % 4) * 0.075;
+    const lean = 0.08 + (blade % 3) * 0.035;
+    const base = grassPositions.length / 3;
+    // Three gently curved sections per blade, tapered to a fine tip.
+    const levels = [
+      { y: 0, w: width, offset: 0 },
+      { y: height * 0.38, w: width * 0.72, offset: lean * 0.22 },
+      { y: height * 0.72, w: width * 0.36, offset: lean * 0.62 },
+      { y: height, w: 0.002, offset: lean },
+    ];
+    const sideX = -dz;
+    const sideZ = dx;
+    levels.forEach((level, levelIndex) => {
+      const centerX = dx * level.offset;
+      const centerZ = dz * level.offset;
+      grassPositions.push(
+        centerX + sideX * level.w, level.y, centerZ + sideZ * level.w,
+        centerX - sideX * level.w, level.y, centerZ - sideZ * level.w
+      );
+      const tint = 0.82 + levelIndex * 0.105;
+      const baseColor = new THREE.Color(grassPalette[blade % grassPalette.length]).multiplyScalar(tint);
+      grassColors.push(baseColor.r, baseColor.g, baseColor.b, baseColor.r, baseColor.g, baseColor.b);
+    });
+    for (let level = 0; level < levels.length - 1; level += 1) {
+      const a = base + level * 2;
+      grassIndices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const grassTuftGeometry = new THREE.BufferGeometry();
+  grassTuftGeometry.setAttribute('position', new THREE.Float32BufferAttribute(grassPositions, 3));
+  grassTuftGeometry.setAttribute('color', new THREE.Float32BufferAttribute(grassColors, 3));
+  grassTuftGeometry.setIndex(grassIndices);
+  grassTuftGeometry.computeVertexNormals();
+  const grassTuftMaterial = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    roughness: 1,
+    metalness: 0,
+  });
+  const grassCount = 7600;
+  const grassInstances = new THREE.InstancedMesh(grassTuftGeometry, grassTuftMaterial, grassCount);
+  grassInstances.castShadow = false;
+  grassInstances.receiveShadow = false;
+  grassInstances.frustumCulled = false;
+  const grassDummy = new THREE.Object3D();
+  const grassUp = new THREE.Vector3(0, 1, 0);
+  const grassNormal = new THREE.Vector3();
+  const grassAlign = new THREE.Quaternion();
+  const grassYaw = new THREE.Quaternion();
+  const grassScale = new THREE.Vector3();
+  let placedGrass = 0;
+  for (let attempt = 0; attempt < grassCount * 7 && placedGrass < grassCount; attempt += 1) {
+    const x = (Math.random() - 0.5) * 145;
+    const z = (Math.random() - 0.5) * 154;
+    const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
+    const height = groundHeight(x, z);
+    if (radial > 0.84 || height < 0.05 || height > 12.5) continue;
+    if (nearTrail(x, z, 2.15) || Math.hypot(x, z - 18) < 6.5) continue;
+    if (Math.hypot(x - 2, z + 43) < 8) continue;
+    if (treeData.some((tree) => Math.hypot(x - tree.x, z - tree.z) < 1.05 + tree.crownRadius * 0.18)) continue;
+    // Avoid very steep slopes; grass is concentrated on the lower, walkable island.
+    const slopeX = (groundHeight(x + 0.35, z) - groundHeight(x - 0.35, z)) / 0.7;
+    const slopeZ = (groundHeight(x, z + 0.35) - groundHeight(x, z - 0.35)) / 0.7;
+    if (Math.hypot(slopeX, slopeZ) > 0.82) continue;
+    grassNormal.set(-slopeX, 1, -slopeZ).normalize();
+    grassAlign.setFromUnitVectors(grassUp, grassNormal);
+    grassYaw.setFromAxisAngle(grassUp, Math.random() * Math.PI * 2);
+    grassAlign.multiply(grassYaw);
+    grassDummy.position.set(x, height + 0.015, z);
+    grassDummy.quaternion.copy(grassAlign);
+    const size = 0.72 + Math.random() * 0.95;
+    grassScale.set(size, size * (0.72 + Math.random() * 0.78), size);
+    grassDummy.scale.copy(grassScale);
+    grassDummy.updateMatrix();
+    grassInstances.setMatrixAt(placedGrass, grassDummy.matrix);
+    grassColor.setHex(grassPalette[Math.floor(Math.random() * grassPalette.length)]);
+    grassInstances.setColorAt(placedGrass, grassColor);
+    placedGrass += 1;
+  }
+  grassInstances.count = placedGrass;
+  grassInstances.instanceMatrix.needsUpdate = true;
+  if (grassInstances.instanceColor) grassInstances.instanceColor.needsUpdate = true;
+  scene.add(grassInstances);
+
   camera.position.y = groundHeight(camera.position.x, camera.position.z) + 1.7;
 
   const audio = createAudio();
