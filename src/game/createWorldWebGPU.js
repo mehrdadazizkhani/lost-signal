@@ -368,8 +368,9 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     { bark: 0x493d2c, leaves: 0x405c40 },
     { bark: 0x5b4934, leaves: 0x263d30 },
   ];
+  const treePresets = ['Ash Large', 'Bush 1', 'Bush 3', 'Oak Large'];
   treeData.forEach((tree, index) => {
-    const presetName = index % 5 === 0 ? 'Oak Small' : index % 7 === 0 ? 'Ash Small' : 'Pine Small';
+    const presetName = treePresets[index % treePresets.length];
     const generatedTree = new Tree();
     generatedTree.loadPreset(presetName);
     generatedTree.options.seed = 1000 + index * 7919;
