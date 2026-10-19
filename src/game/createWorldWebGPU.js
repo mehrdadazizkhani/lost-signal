@@ -326,14 +326,47 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   trunkInstances.castShadow = true;
   trunkInstances.receiveShadow = true;
 
-  const foliageGeometry = new THREE.ConeGeometry(1, 1, 9, 2);
-  const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
-  const foliageTiers = [0, 1, 2, 3].map((tier) => {
+  // Fluffy foliage inspired by douges.dev's Three.js tree article:
+  // use alpha-cutout foliage cards crossed in 3 directions, rather than stacked cones.
+  // This stays on built-in materials so it works with the WebGPU renderer.
+  const foliageCanvas = document.createElement('canvas');
+  foliageCanvas.width = 256;
+  foliageCanvas.height = 256;
+  const foliageContext = foliageCanvas.getContext('2d');
+  foliageContext.clearRect(0, 0, 256, 256);
+  foliageContext.fillStyle = '#ffffff';
+  // Layered irregular clumps create a soft, leafy silhouette with a transparent edge.
+  const foliageClumps = [
+    [128, 57, 34, 38], [94, 76, 31, 34], [161, 78, 32, 36],
+    [72, 108, 29, 32], [111, 104, 37, 39], [151, 108, 37, 39], [185, 109, 26, 31],
+    [87, 139, 34, 32], [128, 139, 41, 39], [169, 141, 34, 32],
+    [108, 171, 32, 29], [148, 171, 32, 29],
+  ];
+  foliageClumps.forEach(([x, y, rx, ry], index) => {
+    foliageContext.globalAlpha = 0.9 + (index % 3) * 0.05;
+    foliageContext.beginPath();
+    foliageContext.ellipse(x, y, rx, ry, ((index % 4) - 1.5) * 0.08, 0, Math.PI * 2);
+    foliageContext.fill();
+  });
+  foliageContext.globalAlpha = 1;
+  const foliageTexture = new THREE.CanvasTexture(foliageCanvas);
+  foliageTexture.colorSpace = THREE.SRGBColorSpace;
+  foliageTexture.magFilter = THREE.LinearFilter;
+  foliageTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  const foliageGeometry = new THREE.PlaneGeometry(1, 1);
+  const foliageMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: foliageTexture,
+    transparent: true,
+    alphaTest: 0.38,
+    side: THREE.DoubleSide,
+    roughness: 1,
+  });
+  const foliageMeshes = [0, 1, 2].map(() => {
     const mesh = new THREE.InstancedMesh(foliageGeometry, foliageMaterial, treeData.length);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
-    mesh.userData.tier = tier;
     return mesh;
   });
   const dummy = new THREE.Object3D();
@@ -348,34 +381,29 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
     trunkInstances.setMatrixAt(index, dummy.matrix);
 
     const paletteColor = new THREE.Color(foliagePalette[Math.floor(Math.random() * foliagePalette.length)]);
-    const treeVariation = 0.82 + Math.random() * 0.28;
-    // The lowest tier is broad; upper tiers become shorter and narrower.
-    const tierSpecs = [
-      { y: 0.48, radius: 1.0, height: 0.78 },
-      { y: 0.67, radius: 0.79, height: 0.75 },
-      { y: 0.84, radius: 0.59, height: 0.72 },
-      { y: 0.99, radius: 0.39, height: 0.64 },
-    ];
-    foliageTiers.forEach((mesh, tier) => {
-      const spec = tierSpecs[tier];
-      const radius = tree.crownRadius * spec.radius * treeVariation;
-      const crownHeight = tree.trunkHeight * spec.height;
+    const treeVariation = 0.86 + Math.random() * 0.32;
+    // Crossed cards keep the crown visibly full from most walking angles.
+    foliageMeshes.forEach((mesh, planeIndex) => {
       dummy.position.set(
-        tree.x + Math.sin(tree.yaw + tier * 1.7) * 0.06 * tree.scale,
-        tree.height + tree.trunkHeight * spec.y,
-        tree.z + Math.cos(tree.yaw + tier * 1.7) * 0.06 * tree.scale
+        tree.x,
+        tree.height + tree.trunkHeight * (0.79 + (treeVariation - 1) * 0.08),
+        tree.z
       );
-      dummy.rotation.set(0, tree.yaw + tier * 0.23, 0);
-      dummy.scale.set(radius, crownHeight, radius);
+      dummy.rotation.set(0, tree.yaw + planeIndex * Math.PI / 3, 0);
+      dummy.scale.set(
+        tree.crownRadius * 2.45 * treeVariation,
+        tree.trunkHeight * (1.56 + treeVariation * 0.08),
+        1
+      );
       dummy.updateMatrix();
       mesh.setMatrixAt(index, dummy.matrix);
-      tempColor.copy(paletteColor).multiplyScalar(0.88 + tier * 0.045 + Math.random() * 0.07);
+      tempColor.copy(paletteColor).multiplyScalar(0.88 + planeIndex * 0.045 + Math.random() * 0.08);
       mesh.setColorAt(index, tempColor);
     });
   });
   trunkInstances.instanceMatrix.needsUpdate = true;
   scene.add(trunkInstances);
-  foliageTiers.forEach((mesh) => {
+  foliageMeshes.forEach((mesh) => {
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     scene.add(mesh);
