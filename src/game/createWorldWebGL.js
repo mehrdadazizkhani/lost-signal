@@ -508,7 +508,7 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
     updateDayNight(elapsed);
     if (elapsed - lastNavigationUpdate >= 0.12) {
       lastNavigationUpdate = elapsed;
-      onNavigationUpdate({ x: camera.position.x, z: camera.position.z, yaw });
+      onNavigationUpdate({ x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw });
     }
     renderer.render(scene, camera);
   }
