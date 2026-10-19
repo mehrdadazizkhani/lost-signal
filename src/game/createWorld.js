@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createAudio } from './audio.js';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { Water } from 'three/addons/objects/Water.js';
 
 export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
@@ -52,9 +53,32 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   sunDisc.renderOrder = 2;
   scene.add(sunDisc);
 
+  // A lightweight, locally generated lunar albedo map; no paid or external texture.
+  const lunarCanvas = document.createElement('canvas');
+  lunarCanvas.width = 512;
+  lunarCanvas.height = 256;
+  const lunarContext = lunarCanvas.getContext('2d');
+  lunarContext.fillStyle = '#aeb8c8';
+  lunarContext.fillRect(0, 0, lunarCanvas.width, lunarCanvas.height);
+  for (let i = 0; i < 190; i += 1) {
+    const x = Math.random() * lunarCanvas.width;
+    const y = Math.random() * lunarCanvas.height;
+    const radius = 2 + Math.random() * 15;
+    const crater = lunarContext.createRadialGradient(x - radius * 0.2, y - radius * 0.2, radius * 0.08, x, y, radius);
+    crater.addColorStop(0, 'rgba(37,45,59,0.38)');
+    crater.addColorStop(0.58, 'rgba(76,87,104,0.20)');
+    crater.addColorStop(0.82, 'rgba(242,246,255,0.24)');
+    crater.addColorStop(1, 'rgba(60,70,88,0)');
+    lunarContext.fillStyle = crater;
+    lunarContext.beginPath();
+    lunarContext.arc(x, y, radius, 0, Math.PI * 2);
+    lunarContext.fill();
+  }
+  const lunarTexture = new THREE.CanvasTexture(lunarCanvas);
+  lunarTexture.colorSpace = THREE.SRGBColorSpace;
   const moonDisc = new THREE.Mesh(
     new THREE.SphereGeometry(2.35, 32, 24),
-    new THREE.MeshBasicMaterial({ color: 0xdce7ff, fog: false, depthWrite: false })
+    new THREE.MeshBasicMaterial({ map: lunarTexture, color: 0xdce7ff, fog: false, depthWrite: false })
   );
   moonDisc.renderOrder = 4;
   scene.add(moonDisc);
@@ -235,10 +259,48 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   const cloudDome = new THREE.Mesh(new THREE.SphereGeometry(292, 64, 48), cloudMaterial);
   cloudDome.renderOrder = 2;
   scene.add(cloudDome);
-  const oceanMaterial = new THREE.MeshStandardMaterial({ color: 0x315e69, roughness: 0.24, metalness: 0.12 });
-  const ocean = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), oceanMaterial);
+  // Procedural seamless normal map keeps the water self-contained and avoids external assets.
+  const normalCanvas = document.createElement('canvas');
+  normalCanvas.width = 256;
+  normalCanvas.height = 256;
+  const normalContext = normalCanvas.getContext('2d');
+  const normalImage = normalContext.createImageData(normalCanvas.width, normalCanvas.height);
+  const waterHeight = (x, y) => (
+    Math.sin((x / 256) * Math.PI * 2 * 3 + Math.sin((y / 256) * Math.PI * 2 * 2)) * 0.48
+    + Math.sin((y / 256) * Math.PI * 2 * 5 + Math.sin((x / 256) * Math.PI * 2 * 2)) * 0.28
+    + Math.sin(((x + y) / 256) * Math.PI * 2 * 9) * 0.12
+  );
+  for (let y = 0; y < 256; y += 1) {
+    for (let x = 0; x < 256; x += 1) {
+      const dx = (waterHeight((x + 1) % 256, y) - waterHeight((x + 255) % 256, y)) * 2.4;
+      const dy = (waterHeight(x, (y + 1) % 256) - waterHeight(x, (y + 255) % 256)) * 2.4;
+      const length = Math.sqrt(dx * dx + dy * dy + 1);
+      const index = (y * 256 + x) * 4;
+      normalImage.data[index] = Math.round(((-dx / length) * 0.5 + 0.5) * 255);
+      normalImage.data[index + 1] = Math.round(((-dy / length) * 0.5 + 0.5) * 255);
+      normalImage.data[index + 2] = Math.round(((1 / length) * 0.5 + 0.5) * 255);
+      normalImage.data[index + 3] = 255;
+    }
+  }
+  normalContext.putImageData(normalImage, 0, 0);
+  const waterNormals = new THREE.CanvasTexture(normalCanvas);
+  waterNormals.wrapS = THREE.RepeatWrapping;
+  waterNormals.wrapT = THREE.RepeatWrapping;
+  waterNormals.repeat.set(18, 18);
+  waterNormals.colorSpace = THREE.NoColorSpace;
+  const ocean = new Water(new THREE.PlaneGeometry(900, 900), {
+    textureWidth: 512,
+    textureHeight: 512,
+    waterNormals,
+    sunDirection: new THREE.Vector3(0.4, 0.8, 0.3),
+    sunColor: 0xffd9a0,
+    waterColor: 0x123e4b,
+    distortionScale: 2.7,
+    fog: true,
+  });
   ocean.rotation.x = -Math.PI / 2;
   ocean.position.y = -1.15;
+  ocean.renderOrder = 0;
   scene.add(ocean);
 
   const terrainMaterial = new THREE.MeshStandardMaterial({ color: 0x536b45, roughness: 1 });
@@ -403,7 +465,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     stars.material.uniforms.uTime.value = elapsed;
     stars.material.uniforms.uNight.value = 1 - daylight;
     milkyWay.material.uniforms.uTime.value = elapsed;
-    milkyWay.material.uniforms.uNight.value = THREE.MathUtils.smoothstep(0.42 - sunHeight, 0.05, 0.75);
+    milkyWay.material.uniforms.uNight.value = THREE.MathUtils.smoothstep(-sunHeight, 0.05, 0.42);
     milkyWay.visible = sunHeight < 0.45;
     cloudMaterial.uniforms.uTime.value = elapsed;
     cloudMaterial.uniforms.uDaylight.value = daylight;
@@ -420,7 +482,10 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     scene.background.copy(color);
     fog.color.copy(color);
     fog.density = 0.008 + daylight * 0.003;
-    oceanMaterial.color.setHSL(0.53, 0.38, 0.12 + daylight * 0.1);
+    ocean.material.uniforms.time.value = elapsed * 0.45;
+    ocean.material.uniforms.sunDirection.value.copy(sunDirection).normalize();
+    ocean.material.uniforms.sunColor.value.setHSL(0.105, 0.68, 0.5 + daylight * 0.35);
+    ocean.material.uniforms.waterColor.value.setHSL(0.53, 0.48, 0.055 + daylight * 0.105);
     if (lastTimeUpdate !== totalMinutes) {
       lastTimeUpdate = totalMinutes;
       const period = hours >= 5 && hours < 11 ? 'MORNING' : hours >= 11 && hours < 16 ? 'DAYLIGHT' : hours >= 16 && hours < 20 ? 'DUSK' : 'NIGHT';
@@ -465,6 +530,8 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
       renderer.domElement.removeEventListener('click', onCanvasClick);
       if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
       renderer.dispose();
+      waterNormals.dispose();
+      lunarTexture.dispose();
       renderer.domElement.remove();
       scene.traverse((object) => {
         if (object.geometry) object.geometry.dispose();
