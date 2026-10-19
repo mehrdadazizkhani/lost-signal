@@ -3,7 +3,7 @@ import { createAudio } from './audio.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
 
-export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
+export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
   const daySky = new THREE.Color('#76a9c5');
   const duskSky = new THREE.Color('#e39a70');
@@ -380,6 +380,7 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
   let stamina = 100;
   let footstepClock = 0;
   let lastTimeUpdate = -1;
+  let lastNavigationUpdate = -1;
   const clock = new THREE.Clock();
 
   function requestPointerLock() {
@@ -505,6 +506,10 @@ export function createWorld(container, { onTimeUpdate = () => {} } = {}) {
     const elapsed = clock.elapsedTime;
     updateMovement(delta);
     updateDayNight(elapsed);
+    if (elapsed - lastNavigationUpdate >= 0.12) {
+      lastNavigationUpdate = elapsed;
+      onNavigationUpdate({ x: camera.position.x, z: camera.position.z, yaw });
+    }
     renderer.render(scene, camera);
   }
   render();
