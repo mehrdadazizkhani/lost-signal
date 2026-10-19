@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Tree, TreePreset } from '@dgreenheck/ez-tree';
+import { Tree } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
@@ -371,7 +371,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   treeData.forEach((tree, index) => {
     const presetName = index % 5 === 0 ? 'Oak Small' : index % 7 === 0 ? 'Ash Small' : 'Pine Small';
     const generatedTree = new Tree();
-    generatedTree.options.copy(TreePreset[presetName]);
+    generatedTree.loadPreset(presetName);
     generatedTree.options.seed = 1000 + index * 7919;
     generatedTree.options.bark.textured = false;
     generatedTree.options.bark.tint = treePalette[index % treePalette.length].bark;
@@ -379,11 +379,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     generatedTree.options.leaves.tint = treePalette[index % treePalette.length].leaves;
     generatedTree.options.leaves.alphaTest = 0.35;
     generatedTree.options.trellis.enabled = false;
-    generatedTree.generateLODs([
-      { distance: 0, detail: {} },
-      { distance: 34, hysteresis: 0.06, detail: { sectionStride: 3, segmentFactor: 0.7, leafStride: 2, leafScale: 1.25 } },
-      { distance: 78, hysteresis: 0.06, detail: { sectionStride: 6, segmentFactor: 0.42, leafStride: 3, leafScale: 1.35, billboard: 'single' } },
-    ]);
+    generatedTree.generate();
     generatedTree.traverse((object) => {
       if (!object.isMesh || !object.material) return;
       object.castShadow = true;
