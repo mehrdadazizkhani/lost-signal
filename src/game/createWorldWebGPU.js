@@ -36,7 +36,13 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {} } =
   renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
   renderer.domElement.tabIndex = 0;
-  await renderer.init();
+  try {
+    await renderer.init();
+  } catch (error) {
+    renderer.dispose();
+    renderer.domElement.remove();
+    throw error;
+  }
 
   const hemi = new THREE.HemisphereLight(0xc9e1e3, 0x35402d, 1.8);
   scene.add(hemi);
