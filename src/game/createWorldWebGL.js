@@ -305,7 +305,7 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
     fog: true,
   });
   ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = -1.15;
+  ocean.position.y = 5;
   ocean.renderOrder = 0;
   scene.add(ocean);
 
