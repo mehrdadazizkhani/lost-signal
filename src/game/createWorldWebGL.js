@@ -3,14 +3,55 @@ import { Tree } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {} } = {}) {
+async function addIslandMesh(THREE, scene) {
+  const gltf = await new GLTFLoader().loadAsync('/assets/island/island.obj.glb');
+  const island = gltf.scene;
+  const initialBounds = new THREE.Box3().setFromObject(island);
+  const center = initialBounds.getCenter(new THREE.Vector3());
+  island.position.x -= center.x;
+  island.position.z -= center.z;
+  island.updateMatrixWorld(true);
+
+  const beach = new THREE.Color(0xb8a27a);
+  const grass = new THREE.Color(0x587b42);
+  const rock = new THREE.Color(0x777a78);
+  const color = new THREE.Color();
+  island.traverse((object) => {
+    if (!object.isMesh || !object.geometry?.attributes?.position) return;
+    const geometry = object.geometry;
+    const positions = geometry.attributes.position;
+    const colors = new Float32Array(positions.count * 3);
+    const vertex = new THREE.Vector3();
+    for (let i = 0; i < positions.count; i += 1) {
+      vertex.fromBufferAttribute(positions, i).applyMatrix4(object.matrixWorld);
+      if (vertex.y < 40) color.copy(beach);
+      else if (vertex.y > 250) color.copy(rock);
+      else color.copy(grass);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    object.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+    object.castShadow = true;
+    object.receiveShadow = true;
+  });
+  scene.add(island);
+  return island;
+}
+
+
+
+export async function createWorld(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {}, onWorldMapUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
   const daySky = new THREE.Color('#76a9c5');
   const duskSky = new THREE.Color('#e39a70');
   const nightSky = new THREE.Color('#101b31');
   // Sky is rendered by the atmospheric scattering dome; keep a dark fallback only.
   scene.background = new THREE.Color('#07101b');
+  const islandMesh = await addIslandMesh(THREE, scene);
   const fog = new THREE.FogExp2(daySky.clone(), 0.0045);
   scene.fog = fog;
   const sky = new Sky();
@@ -305,7 +346,7 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
     fog: true,
   });
   ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = -1.15;
+  ocean.position.y = 5;
   ocean.renderOrder = 0;
   scene.add(ocean);
 
@@ -315,12 +356,14 @@ export function createWorld(container, { onTimeUpdate = () => {}, onNavigationUp
   terrain.position.y = -0.3;
   terrain.scale.set(1, 1.08, 0.18);
   terrain.receiveShadow = true;
+  terrain.visible = false;
   scene.add(terrain);
 
   const ridge = new THREE.Mesh(new THREE.ConeGeometry(22, 20, 7), new THREE.MeshStandardMaterial({ color: 0x405a40, roughness: 1 }));
   ridge.position.set(-18, 8, -36);
   ridge.castShadow = true;
   ridge.receiveShadow = true;
+  ridge.visible = false;
   scene.add(ridge);
 
   const beacon = new THREE.Group();
