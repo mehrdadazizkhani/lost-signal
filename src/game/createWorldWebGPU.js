@@ -3,6 +3,46 @@ import { Tree } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+async function addIslandMesh(THREE, scene) {
+  const gltf = await new GLTFLoader().loadAsync('/assets/island/island.obj.glb');
+  const island = gltf.scene;
+  const initialBounds = new THREE.Box3().setFromObject(island);
+  const center = initialBounds.getCenter(new THREE.Vector3());
+  island.position.x -= center.x;
+  island.position.z -= center.z;
+  island.updateMatrixWorld(true);
+
+  const beach = new THREE.Color(0xb8a27a);
+  const grass = new THREE.Color(0x587b42);
+  const rock = new THREE.Color(0x777a78);
+  const color = new THREE.Color();
+  island.traverse((object) => {
+    if (!object.isMesh || !object.geometry?.attributes?.position) return;
+    const geometry = object.geometry;
+    const positions = geometry.attributes.position;
+    const colors = new Float32Array(positions.count * 3);
+    const vertex = new THREE.Vector3();
+    for (let i = 0; i < positions.count; i += 1) {
+      vertex.fromBufferAttribute(positions, i).applyMatrix4(object.matrixWorld);
+      if (vertex.y < 40) color.copy(beach);
+      else if (vertex.y > 250) color.copy(rock);
+      else color.copy(grass);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    object.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+    object.castShadow = true;
+    object.receiveShadow = true;
+  });
+  scene.add(island);
+  return island;
+}
+
+
 
 export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {}, onWorldMapUpdate = () => {} } = {}) {
   const scene = new THREE.Scene();
@@ -10,6 +50,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   const duskSky = new THREE.Color('#e39a70');
   const nightSky = new THREE.Color('#101b31');
   scene.background = new THREE.Color('#07101b');
+  const islandMesh = await addIslandMesh(THREE, scene);
   const fog = new THREE.FogExp2(daySky.clone(), 0.0045);
   scene.fog = fog;
   const sky = new SkyMesh();
@@ -276,6 +317,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   const terrain = new THREE.Mesh(terrainGeometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
   terrain.receiveShadow = true;
   terrain.castShadow = true;
+  terrain.visible = false;
   scene.add(terrain);
 
   const beacon = new THREE.Group();
