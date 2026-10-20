@@ -194,7 +194,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     resolutionScale: 0.35,
   });
   ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = -1.15;
+  ocean.position.y = 5;
   ocean.renderOrder = 0;
   scene.add(ocean);
 
