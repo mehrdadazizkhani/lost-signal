@@ -4,20 +4,54 @@ import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 async function addIslandMesh(THREE, scene) {
-  const gltf = await new GLTFLoader().loadAsync('/assets/island/island.obj.glb');
-  const island = gltf.scene;
+  let island;
+  let loadedFromObj = false;
+
+  try {
+    const gltf = await new GLTFLoader().loadAsync('/assets/island/island.obj.glb');
+    island = gltf.scene;
+  } catch (error) {
+    console.warn('LOST SIGNAL: GLB island asset unavailable; loading the repository OBJ asset instead.', error);
+    island = await new OBJLoader().loadAsync('/assets/island/island.obj');
+    loadedFromObj = true;
+  }
+
+  if (loadedFromObj) {
+    // Rhino exports are often Z-up. Detect that case from the bounding-box proportions
+    // before converting the model to Three.js Y-up coordinates.
+    const sourceBounds = new THREE.Box3().setFromObject(island);
+    const sourceSize = sourceBounds.getSize(new THREE.Vector3());
+    if (sourceSize.z < sourceSize.x * 0.5 && sourceSize.z < sourceSize.y * 0.5) {
+      island.rotation.x = -Math.PI / 2;
+    }
+
+    // Fit the existing OBJ model to this renderer's established world footprint.
+    island.updateMatrixWorld(true);
+    const rotatedBounds = new THREE.Box3().setFromObject(island);
+    const rotatedSize = rotatedBounds.getSize(new THREE.Vector3());
+    const horizontalSize = Math.max(rotatedSize.x, rotatedSize.z);
+    if (horizontalSize > 0) island.scale.multiplyScalar(256 / horizontalSize);
+    island.updateMatrixWorld(true);
+  }
+
   const initialBounds = new THREE.Box3().setFromObject(island);
   const center = initialBounds.getCenter(new THREE.Vector3());
   island.position.x -= center.x;
   island.position.z -= center.z;
+  if (loadedFromObj) island.position.y -= initialBounds.min.y;
   island.updateMatrixWorld(true);
 
   const beach = new THREE.Color(0xb8a27a);
   const grass = new THREE.Color(0x587b42);
   const rock = new THREE.Color(0x777a78);
   const color = new THREE.Color();
+  const modelHeight = initialBounds.max.y - initialBounds.min.y;
+  const beachLimit = loadedFromObj ? modelHeight * 0.2 : 40;
+  const rockLimit = loadedFromObj ? modelHeight * 0.7 : 250;
+
   island.traverse((object) => {
     if (!object.isMesh || !object.geometry?.attributes?.position) return;
     const geometry = object.geometry;
@@ -26,8 +60,8 @@ async function addIslandMesh(THREE, scene) {
     const vertex = new THREE.Vector3();
     for (let i = 0; i < positions.count; i += 1) {
       vertex.fromBufferAttribute(positions, i).applyMatrix4(object.matrixWorld);
-      if (vertex.y < 40) color.copy(beach);
-      else if (vertex.y > 250) color.copy(rock);
+      if (vertex.y < beachLimit) color.copy(beach);
+      else if (vertex.y > rockLimit) color.copy(rock);
       else color.copy(grass);
       colors[i * 3] = color.r;
       colors[i * 3 + 1] = color.g;
@@ -38,10 +72,10 @@ async function addIslandMesh(THREE, scene) {
     object.castShadow = true;
     object.receiveShadow = true;
   });
+
   scene.add(island);
   return island;
 }
-
 
 
 export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, onNavigationUpdate = () => {}, onWorldMapUpdate = () => {} } = {}) {
