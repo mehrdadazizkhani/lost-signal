@@ -3,43 +3,10 @@ import { Tree } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { loadIslandSurface } from './islandSurface.js';
 
 async function addIslandMesh(THREE, scene) {
-  const gltf = await new GLTFLoader().loadAsync('/assets/island/island.obj.glb');
-  const island = gltf.scene;
-  const initialBounds = new THREE.Box3().setFromObject(island);
-  const center = initialBounds.getCenter(new THREE.Vector3());
-  island.position.x -= center.x;
-  island.position.z -= center.z;
-  island.updateMatrixWorld(true);
-
-  const beach = new THREE.Color(0xb8a27a);
-  const grass = new THREE.Color(0x587b42);
-  const rock = new THREE.Color(0x777a78);
-  const color = new THREE.Color();
-  island.traverse((object) => {
-    if (!object.isMesh || !object.geometry?.attributes?.position) return;
-    const geometry = object.geometry;
-    const positions = geometry.attributes.position;
-    const colors = new Float32Array(positions.count * 3);
-    const vertex = new THREE.Vector3();
-    for (let i = 0; i < positions.count; i += 1) {
-      vertex.fromBufferAttribute(positions, i).applyMatrix4(object.matrixWorld);
-      if (vertex.y < 40) color.copy(beach);
-      else if (vertex.y > 250) color.copy(rock);
-      else color.copy(grass);
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
-    }
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    object.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
-    object.castShadow = true;
-    object.receiveShadow = true;
-  });
-  scene.add(island);
-  return island;
+  return loadIslandSurface(THREE, scene);
 }
 
 
@@ -50,7 +17,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   const duskSky = new THREE.Color('#e39a70');
   const nightSky = new THREE.Color('#101b31');
   scene.background = new THREE.Color('#07101b');
-  const islandMesh = await addIslandMesh(THREE, scene);
+  const { island: islandMesh, bounds: islandBounds, sampleHeight, waterLevel } = await addIslandMesh(THREE, scene);
   const fog = new THREE.FogExp2(daySky.clone(), 0.0045);
   scene.fog = fog;
   const sky = new SkyMesh();
@@ -235,14 +202,14 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     resolutionScale: 0.35,
   });
   ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = 5;
+  ocean.position.y = waterLevel;
   ocean.renderOrder = 0;
   scene.add(ocean);
 
   // A continuous island mesh tapers below sea level at the shoreline.
   // The same height function drives the rendered terrain and player elevation.
-  const islandRadiusX = 128;
-  const islandRadiusZ = 142;
+  const islandRadiusX = islandBounds.getSize(new THREE.Vector3()).x / 2;
+  const islandRadiusZ = islandBounds.getSize(new THREE.Vector3()).z / 2;
   const mountain = { x: -39, z: -52 };
   const ridgeAngle = -0.48;
   const smoothstep = (a, b, value) => {
@@ -267,21 +234,12 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     return distance + Math.sin(x * 0.34 + z * 0.21) * 0.22 + Math.sin(z * 0.53 - x * 0.17) * 0.12;
   }
   function groundHeight(x, z) {
-    const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
-    const broad = Math.sin(x * 0.027 + z * 0.019) * 1.8
-      + Math.sin(z * 0.041 - x * 0.033) * 1.05
-      + Math.cos(x * 0.061 + z * 0.047) * 0.52;
-    const fine = Math.sin(x * 0.17 + Math.sin(z * 0.12) * 1.7) * 0.22 + Math.cos(z * 0.21 - x * 0.13) * 0.17;
-    const shoreDrop = smoothstep(0.87, 1.12, radial) * 7.5;
-    const dx = x - mountain.x, dz = z - mountain.z;
-    const along = dx * Math.cos(ridgeAngle) + dz * Math.sin(ridgeAngle);
-    const across = -dx * Math.sin(ridgeAngle) + dz * Math.cos(ridgeAngle);
-    const ridge = 39 * Math.exp(-(along * along) / 1900 - (across * across) / 360);
-    const shoulder = 13 * Math.exp(-(((x + 68) ** 2) / 700 + ((z + 18) ** 2) / 1200));
-    const knoll = 8 * Math.exp(-(((x - 46) ** 2) / 440 + ((z + 62) ** 2) / 500));
-    const pathInfluence = 1 - smoothstep(0.25, 2.4, Math.max(0, wornPathDistance(x, z)));
-    return 0.7 + Math.max(0, 1 - radial) * 2.6 + (broad + fine) * (1 - pathInfluence * 0.24) - shoreDrop + ridge + shoulder + knoll;
+    return sampleHeight(x, z) ?? -2.5;
   }
+
+  // The legacy procedural terrain remains hidden; its height samples now come from the
+  // actual OBJ surface rather than a separate synthetic island.
+
 
   const terrainGeometry = new THREE.PlaneGeometry(330, 360, 280, 300);
   terrainGeometry.rotateX(-Math.PI / 2);
@@ -356,7 +314,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
     const height = groundHeight(x, z);
     const mountainDistance = Math.hypot(x - mountain.x, z - mountain.z);
-    if (radial > 0.86 || height > 23 || height < -0.2) continue;
+    if (sampleHeight(x, z) === null || radial > 0.98 || height < 4 || height > 13) continue;
     if (nearTrail(x, z, 2.8) || Math.hypot(x, z - 18) < 11) continue;
     if (Math.hypot(x - 9, z + 72) < 13) continue;
     // Keep the forest concentrated around the mountain's lower slopes and coast.
@@ -377,8 +335,9 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   // Grid cells are grouped by elevation into SVG paths, so the HUD stays lightweight.
   {
     const columns = 96, rows = 104;
-    const minX = -165, minZ = -180;
-    const cellX = 330 / columns, cellZ = 360 / rows;
+    const minX = islandBounds.min.x, minZ = islandBounds.min.z;
+    const cellX = islandBounds.getSize(new THREE.Vector3()).x / columns;
+    const cellZ = islandBounds.getSize(new THREE.Vector3()).z / rows;
     const kinds = ["water", "shore", "lowland", "forest", "upland", "summit"];
     const paths = Object.fromEntries(kinds.map((kind) => [kind, ""]));
     for (let row = 0; row < rows; row += 1) {
@@ -388,11 +347,10 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
         const x0 = minX + column * cellX;
         const xCenter = x0 + cellX * 0.5;
         const h = groundHeight(xCenter, zCenter);
-        const kind = h <= -1.15 ? "water"
-          : h < 1.2 ? "shore"
-          : h < 5.5 ? "lowland"
-          : h < 12 ? "forest"
-          : h < 25 ? "upland" : "summit";
+        const kind = h <= waterLevel ? "water"
+          : h < 4 ? "shore"
+          : h <= 13 ? "forest"
+          : "summit";
         const w = cellX + 0.035, d = cellZ + 0.035;
         paths[kind] += `M${x0.toFixed(2)} ${z0.toFixed(2)}h${w.toFixed(2)}v${d.toFixed(2)}h-${w.toFixed(2)}Z`;
       }
@@ -507,7 +465,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     const z = (Math.random() - 0.5) * 275;
     const radial = Math.sqrt((x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ));
     const height = groundHeight(x, z);
-    if (radial > 0.87 || height < 0.05 || height > 15.5) continue;
+    if (sampleHeight(x, z) === null || radial > 0.98 || height < 4 || height > 13) continue;
     if (nearTrail(x, z, 1.2) || Math.hypot(x, z - 18) < 7.5) continue;
     if (Math.hypot(x - 9, z + 72) < 10) continue;
     if (treeData.some((tree) => Math.hypot(x - tree.x, z - tree.z) < 1.05 + tree.crownRadius * 0.18)) continue;
@@ -581,8 +539,13 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   renderer.domElement.addEventListener('click', onCanvasClick);
 
   function canMoveTo(x, z) {
-    const insideIsland = (x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ) < 0.94;
-    if (!insideIsland || groundHeight(x, z) <= -0.95) return false;
+    const groundY = sampleHeight(x, z);
+    if (groundY === null || groundY <= waterLevel) return false;
+    const left = sampleHeight(x - 0.8, z), right = sampleHeight(x + 0.8, z);
+    const back = sampleHeight(x, z - 0.8), front = sampleHeight(x, z + 0.8);
+    if ([left, right, back, front].some((height) => height === null)) return false;
+    const slope = Math.hypot((right - left) / 1.6, (front - back) / 1.6);
+    if (slope > 1.1) return false;
     return !obstacles.some((tree) => Math.hypot(x - tree.x, z - tree.z) < playerRadius + tree.radius);
   }
 

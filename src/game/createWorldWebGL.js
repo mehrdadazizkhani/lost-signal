@@ -3,43 +3,10 @@ import { Tree } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { loadIslandSurface } from './islandSurface.js';
 
 async function addIslandMesh(THREE, scene) {
-  const gltf = await new GLTFLoader().loadAsync('/assets/island/island.obj.glb');
-  const island = gltf.scene;
-  const initialBounds = new THREE.Box3().setFromObject(island);
-  const center = initialBounds.getCenter(new THREE.Vector3());
-  island.position.x -= center.x;
-  island.position.z -= center.z;
-  island.updateMatrixWorld(true);
-
-  const beach = new THREE.Color(0xb8a27a);
-  const grass = new THREE.Color(0x587b42);
-  const rock = new THREE.Color(0x777a78);
-  const color = new THREE.Color();
-  island.traverse((object) => {
-    if (!object.isMesh || !object.geometry?.attributes?.position) return;
-    const geometry = object.geometry;
-    const positions = geometry.attributes.position;
-    const colors = new Float32Array(positions.count * 3);
-    const vertex = new THREE.Vector3();
-    for (let i = 0; i < positions.count; i += 1) {
-      vertex.fromBufferAttribute(positions, i).applyMatrix4(object.matrixWorld);
-      if (vertex.y < 40) color.copy(beach);
-      else if (vertex.y > 250) color.copy(rock);
-      else color.copy(grass);
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
-    }
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    object.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
-    object.castShadow = true;
-    object.receiveShadow = true;
-  });
-  scene.add(island);
-  return island;
+  return loadIslandSurface(THREE, scene);
 }
 
 
@@ -51,7 +18,7 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
   const nightSky = new THREE.Color('#101b31');
   // Sky is rendered by the atmospheric scattering dome; keep a dark fallback only.
   scene.background = new THREE.Color('#07101b');
-  const islandMesh = await addIslandMesh(THREE, scene);
+  const { island: islandMesh, bounds: islandBounds, sampleHeight, waterLevel } = await addIslandMesh(THREE, scene);
   const fog = new THREE.FogExp2(daySky.clone(), 0.0045);
   scene.fog = fog;
   const sky = new Sky();
@@ -64,7 +31,7 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
 
   const camera = new THREE.PerspectiveCamera(72, container.clientWidth / Math.max(container.clientHeight, 1), 0.1, 1000000);
   camera.rotation.order = 'YXZ';
-  camera.position.set(0, 2, 18);
+  camera.position.set(0, (sampleHeight(0, 18) ?? waterLevel + 0.5) + 1.7, 18);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
@@ -346,7 +313,7 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
     fog: true,
   });
   ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = 5;
+  ocean.position.y = waterLevel;
   ocean.renderOrder = 0;
   scene.add(ocean);
 
@@ -391,8 +358,10 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
   ];
   const treePresets = ['Ash Large', 'Bush 1', 'Bush 3', 'Oak Large'];
   for (let i = 0; i < 100; i += 1) {
-    const x = (Math.random() - 0.5) * 120;
-    const z = (Math.random() - 0.5) * 125;
+    const x = (Math.random() - 0.5) * islandBounds.getSize(new THREE.Vector3()).x * 0.92;
+    const z = (Math.random() - 0.5) * islandBounds.getSize(new THREE.Vector3()).z * 0.92;
+    const groundY = sampleHeight(x, z);
+    if (groundY === null || groundY < 4 || groundY > 13) continue;
     if (Math.hypot(x, z - 16) < 13 || Math.hypot(x - 2, z + 43) < 10) continue;
     const scale = 0.7 + Math.random() * 0.7;
     const presetName = treePresets[i % treePresets.length];
@@ -407,7 +376,7 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
     tree.options.trellis.enabled = false;
     tree.generate();
     tree.scale.setScalar(0.28 + Math.random() * 0.12);
-    tree.position.set(x, 0, z);
+    tree.position.set(x, groundY, z);
     tree.rotation.y = Math.random() * Math.PI * 2;
     tree.traverse((object) => {
       if (object.isMesh) {
@@ -422,8 +391,9 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
   // Match the minimap to the actual fallback island footprint, ridge and placed trees.
   {
     const columns = 96, rows = 104;
-    const minX = -100, minZ = -100;
-    const cellX = 200 / columns, cellZ = 200 / rows;
+    const minX = islandBounds.min.x, minZ = islandBounds.min.z;
+    const cellX = islandBounds.getSize(new THREE.Vector3()).x / columns;
+    const cellZ = islandBounds.getSize(new THREE.Vector3()).z / rows;
     const kinds = ["water", "shore", "lowland", "forest", "upland", "summit"];
     const paths = Object.fromEntries(kinds.map((kind) => [kind, ""]));
     for (let row = 0; row < rows; row += 1) {
@@ -431,14 +401,11 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
       for (let column = 0; column < columns; column += 1) {
         const x0 = minX + column * cellX;
         const x = x0 + cellX * 0.5, z = z0 + cellZ * 0.5;
-        const radial = Math.sqrt((x * x) / (78 * 78) + (z * z) / (84.24 * 84.24));
-        const ridgeDistance = Math.hypot(x + 18, z + 36);
-        const height = radial >= 1 ? -2 : ridgeDistance < 22 ? 18 - ridgeDistance * (20 / 22) : -0.3;
-        const kind = height <= -1.15 ? "water"
-          : height < 1.2 ? "shore"
-          : height < 5.5 ? "lowland"
-          : height < 12 ? "forest"
-          : height < 25 ? "upland" : "summit";
+        const height = sampleHeight(x, z) ?? -2.5;
+        const kind = height <= waterLevel ? "water"
+          : height < 4 ? "shore"
+          : height <= 13 ? "forest"
+          : "summit";
         const w = cellX + 0.035, d = cellZ + 0.035;
         paths[kind] += `M${x0.toFixed(2)} ${z0.toFixed(2)}h${w.toFixed(2)}v${d.toFixed(2)}h-${w.toFixed(2)}Z`;
       }
@@ -452,8 +419,8 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
   const audio = createAudio();
   const keys = new Set();
   const playerRadius = 0.55;
-  const islandRadiusX = 76;
-  const islandRadiusZ = 81;
+  const islandRadiusX = islandBounds.getSize(new THREE.Vector3()).x / 2;
+  const islandRadiusZ = islandBounds.getSize(new THREE.Vector3()).z / 2;
   const lookSensitivity = 0.0022;
   const moveVector = new THREE.Vector3();
   const worldUp = new THREE.Vector3(0, 1, 0);
@@ -495,8 +462,13 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
   renderer.domElement.addEventListener('click', onCanvasClick);
 
   function canMoveTo(x, z) {
-    const insideIsland = (x * x) / (islandRadiusX * islandRadiusX) + (z * z) / (islandRadiusZ * islandRadiusZ) < 0.94;
-    if (!insideIsland) return false;
+    const groundY = sampleHeight(x, z);
+    if (groundY === null || groundY <= waterLevel) return false;
+    const left = sampleHeight(x - 0.8, z), right = sampleHeight(x + 0.8, z);
+    const back = sampleHeight(x, z - 0.8), front = sampleHeight(x, z + 0.8);
+    if ([left, right, back, front].some((height) => height === null)) return false;
+    const slope = Math.hypot((right - left) / 1.6, (front - back) / 1.6);
+    if (slope > 1.1) return false;
     return !obstacles.some((tree) => Math.hypot(x - tree.x, z - tree.z) < playerRadius + tree.radius);
   }
 
@@ -522,6 +494,8 @@ export async function createWorld(container, { onTimeUpdate = () => {}, onNaviga
     const oldZ = camera.position.z;
     if (canMoveTo(nextX, camera.position.z)) camera.position.x = nextX;
     if (canMoveTo(camera.position.x, nextZ)) camera.position.z = nextZ;
+    const groundY = sampleHeight(camera.position.x, camera.position.z);
+    if (groundY !== null) camera.position.y = groundY + 1.7;
     const actualDistance = Math.hypot(camera.position.x - oldX, camera.position.z - oldZ);
     if (actualDistance > 0.001) {
       footstepClock += delta;
