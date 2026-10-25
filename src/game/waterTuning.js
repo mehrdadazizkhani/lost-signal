@@ -9,7 +9,7 @@ export const DEFAULT_WATER_SETTINGS = {
   sunX: 0.4,
   sunY: 0.8,
   sunZ: 0.3,
-  waveSpeed: 0.45,
+  waveSpeed: 0.15,
   reflectionResolution: 512,
   resolutionScale: 0.35,
 };
