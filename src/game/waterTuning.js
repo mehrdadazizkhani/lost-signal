@@ -1,0 +1,15 @@
+export const DEFAULT_WATER_SETTINGS = {
+  level: 1.5,
+  planeSize: 10000,
+  waveDetail: 1.4,
+  normalStrength: 2.4,
+  distortionScale: 3.2,
+  waterColor: '#123e4b',
+  sunColor: '#ffd9a0',
+  sunX: 0.4,
+  sunY: 0.8,
+  sunZ: 0.3,
+  waveSpeed: 0.45,
+  reflectionResolution: 512,
+  resolutionScale: 0.35,
+};

@@ -4,6 +4,7 @@ import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
 import { loadIslandSurface } from './islandSurface.js';
+import { DEFAULT_WATER_SETTINGS } from './waterTuning.js';
 
 async function addIslandMesh(THREE, scene) {
   return loadIslandSurface(THREE, scene);
@@ -17,7 +18,9 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   const duskSky = new THREE.Color('#e39a70');
   const nightSky = new THREE.Color('#101b31');
   scene.background = new THREE.Color('#07101b');
-  const { island: islandMesh, bounds: islandBounds, sampleHeight, waterLevel } = await addIslandMesh(THREE, scene);
+  const { island: islandMesh, bounds: islandBounds, sampleHeight, waterLevel: initialWaterLevel } = await addIslandMesh(THREE, scene);
+  let waterLevel = initialWaterLevel;
+  const waterSettings = { ...DEFAULT_WATER_SETTINGS };
   const fog = new THREE.FogExp2(daySky.clone(), 0.0045);
   scene.fog = fog;
   const sky = new SkyMesh();
@@ -168,43 +171,56 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   normalCanvas.width = 256;
   normalCanvas.height = 256;
   const normalContext = normalCanvas.getContext('2d');
-  const normalImage = normalContext.createImageData(normalCanvas.width, normalCanvas.height);
   const waterHeight = (x, y) => (
     Math.sin((x / 256) * Math.PI * 2 * 3 + Math.sin((y / 256) * Math.PI * 2 * 2)) * 0.48
     + Math.sin((y / 256) * Math.PI * 2 * 5 + Math.sin((x / 256) * Math.PI * 2 * 2)) * 0.28
     + Math.sin(((x + y) / 256) * Math.PI * 2 * 9) * 0.12
   );
-  for (let y = 0; y < 256; y += 1) {
-    for (let x = 0; x < 256; x += 1) {
-      const dx = (waterHeight((x + 1) % 256, y) - waterHeight((x + 255) % 256, y)) * 2.4;
-      const dy = (waterHeight(x, (y + 1) % 256) - waterHeight(x, (y + 255) % 256)) * 2.4;
-      const length = Math.sqrt(dx * dx + dy * dy + 1);
-      const index = (y * 256 + x) * 4;
-      normalImage.data[index] = Math.round(((-dx / length) * 0.5 + 0.5) * 255);
-      normalImage.data[index + 1] = Math.round(((-dy / length) * 0.5 + 0.5) * 255);
-      normalImage.data[index + 2] = Math.round(((1 / length) * 0.5 + 0.5) * 255);
-      normalImage.data[index + 3] = 255;
+  function updateWaterNormalMap(strength) {
+    const normalImage = normalContext.createImageData(256, 256);
+    for (let y = 0; y < 256; y += 1) {
+      for (let x = 0; x < 256; x += 1) {
+        const dx = (waterHeight((x + 1) % 256, y) - waterHeight((x + 255) % 256, y)) * strength;
+        const dy = (waterHeight(x, (y + 1) % 256) - waterHeight(x, (y + 255) % 256)) * strength;
+        const length = Math.sqrt(dx * dx + dy * dy + 1);
+        const index = (y * 256 + x) * 4;
+        normalImage.data[index] = Math.round(((-dx / length) * 0.5 + 0.5) * 255);
+        normalImage.data[index + 1] = Math.round(((-dy / length) * 0.5 + 0.5) * 255);
+        normalImage.data[index + 2] = Math.round(((1 / length) * 0.5 + 0.5) * 255);
+        normalImage.data[index + 3] = 255;
+      }
     }
+    normalContext.putImageData(normalImage, 0, 0);
   }
-  normalContext.putImageData(normalImage, 0, 0);
+  updateWaterNormalMap(DEFAULT_WATER_SETTINGS.normalStrength);
   const waterNormals = new THREE.CanvasTexture(normalCanvas);
   waterNormals.wrapS = THREE.RepeatWrapping;
   waterNormals.wrapT = THREE.RepeatWrapping;
   waterNormals.repeat.set(220, 220);
   waterNormals.colorSpace = THREE.NoColorSpace;
-  const ocean = new WaterMesh(new THREE.PlaneGeometry(10000, 10000), {
-    waterNormals,
-    sunDirection: new THREE.Vector3(0.4, 0.8, 0.3),
-    sunColor: 0xffd9a0,
-    waterColor: 0x123e4b,
-    distortionScale: 3.7,
-    size: 1.4,
-    resolutionScale: 0.35,
-  });
-  ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = waterLevel;
-  ocean.renderOrder = 0;
-  scene.add(ocean);
+  let ocean;
+  function rebuildOcean() {
+    if (ocean) {
+      scene.remove(ocean);
+      ocean.geometry.dispose();
+      ocean.material.dispose();
+    }
+    ocean = new WaterMesh(new THREE.PlaneGeometry(10000, 10000), {
+      waterNormals,
+      sunDirection: new THREE.Vector3(waterSettings.sunX, waterSettings.sunY, waterSettings.sunZ).normalize(),
+      sunColor: waterSettings.sunColor,
+      waterColor: waterSettings.waterColor,
+      distortionScale: waterSettings.distortionScale,
+      size: waterSettings.waveDetail,
+      resolutionScale: waterSettings.resolutionScale,
+    });
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.y = waterSettings.level;
+    ocean.scale.setScalar(waterSettings.planeSize / 10000);
+    ocean.renderOrder = 0;
+    scene.add(ocean);
+  }
+  rebuildOcean();
 
   // A continuous island mesh tapers below sea level at the shoreline.
   // The same height function drives the rendered terrain and player elevation.
@@ -619,9 +635,9 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     // Keep the atmospheric scattering sky visible; use the palette only for distant haze.
     fog.color.copy(color);
     fog.density = 0.004 + daylight * 0.0025;
-    ocean.sunDirection.value.copy(sunDirection).normalize();
-    ocean.sunColor.value.setHSL(0.105, 0.68, 0.5 + daylight * 0.35);
-    ocean.waterColor.value.setHSL(0.53, 0.48, 0.055 + daylight * 0.105);
+    ocean.sunDirection.value.set(waterSettings.sunX, waterSettings.sunY, waterSettings.sunZ).normalize();
+    ocean.sunColor.value.set(waterSettings.sunColor);
+    ocean.waterColor.value.set(waterSettings.waterColor);
     if (lastTimeUpdate !== totalMinutes) {
       lastTimeUpdate = totalMinutes;
       const period = hours >= 5 && hours < 11 ? 'MORNING' : hours >= 11 && hours < 16 ? 'DAYLIGHT' : hours >= 16 && hours < 20 ? 'DUSK' : 'NIGHT';
@@ -644,6 +660,25 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   }
   render();
 
+  function setWaterParameters(nextSettings) {
+    const previousNormalStrength = waterSettings.normalStrength;
+    Object.assign(waterSettings, nextSettings);
+    waterLevel = waterSettings.level;
+    ocean.position.y = waterSettings.level;
+    ocean.scale.setScalar(waterSettings.planeSize / 10000);
+    if (previousNormalStrength !== waterSettings.normalStrength) {
+      updateWaterNormalMap(waterSettings.normalStrength);
+      waterNormals.needsUpdate = true;
+    }
+    const direction = new THREE.Vector3(waterSettings.sunX, waterSettings.sunY, waterSettings.sunZ).normalize();
+    ocean.size.value = waterSettings.waveDetail;
+    ocean.distortionScale.value = waterSettings.distortionScale;
+    ocean.resolutionScale = waterSettings.resolutionScale;
+    ocean.sunDirection.value.copy(direction);
+    ocean.sunColor.value.set(waterSettings.sunColor);
+    ocean.waterColor.value.set(waterSettings.waterColor);
+  }
+
   function onResize() {
     const width = Math.max(container.clientWidth, 1);
     const height = Math.max(container.clientHeight, 1);
@@ -654,6 +689,8 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
   window.addEventListener('resize', onResize);
 
   return {
+    rendererType: 'webgpu',
+    setWaterParameters,
     requestPointerLock,
     startAudio: () => audio.start(),
     setAudioVolumes: (volumes) => audio.setVolumes(volumes),

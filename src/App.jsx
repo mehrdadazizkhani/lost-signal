@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createWorld } from './game/createWorld.js';
+import { DEFAULT_WATER_SETTINGS } from './game/waterTuning.js';
 
 const controls = [
   { keys: ['W', 'A', 'S', 'D'], label: 'Move' },
@@ -24,6 +25,10 @@ export default function App() {
   const [timeOfDay, setTimeOfDay] = useState('MORNING');
   const [navigation, setNavigation] = useState({ x: 0, z: 18, yaw: 0 });
   const [worldMap, setWorldMap] = useState(null);
+  const [waterSettings, setWaterSettings] = useState({ ...DEFAULT_WATER_SETTINGS });
+  const [waterPanelOpen, setWaterPanelOpen] = useState(true);
+  const [waterRenderer, setWaterRenderer] = useState('loading');
+  const [waterCopied, setWaterCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +47,7 @@ export default function App() {
         return;
       }
       worldRef.current = world;
+      setWaterRenderer(world.rendererType || 'unknown');
       setWorldReady(true);
     }).catch((error) => {
       console.error('LOST SIGNAL could not initialize its renderer.', error);
@@ -78,6 +84,10 @@ export default function App() {
     worldRef.current?.setMuted(muted);
   }, [muted]);
 
+  useEffect(() => {
+    if (worldReady) worldRef.current?.setWaterParameters?.(waterSettings);
+  }, [waterSettings, worldReady]);
+
   function startGame() {
     if (!worldRef.current) return;
     worldRef.current.startAudio();
@@ -101,11 +111,74 @@ export default function App() {
     setVolumes((current) => ({ ...current, [key]: Number(value) }));
   }
 
+  function changeWaterSetting(key, value) {
+    setWaterSettings((current) => ({ ...current, [key]: value }));
+    setWaterCopied(false);
+  }
+
+  async function copyWaterSettings() {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(waterSettings, null, 2));
+      setWaterCopied(true);
+    } catch (error) {
+      console.error('Could not copy water settings.', error);
+      setWaterCopied(false);
+    }
+  }
+
   return (
     <main className="game-shell">
       <div className="world" ref={mountRef} aria-label="3D island world" />
       <div className="film-grain" />
       <div className="vignette" />
+
+      <section className={`water-lab ${waterPanelOpen ? 'is-open' : 'is-collapsed'}`} aria-label="Live water rendering controls">
+        <div className="water-lab-heading">
+          <div>
+            <span className="water-lab-kicker">RENDER DEBUG / LIVE TUNING</span>
+            <h2>WATER <em>LAB</em></h2>
+            <span className="water-lab-renderer">{waterRenderer.toUpperCase()} · CHANGES APPLY LIVE</span>
+          </div>
+          <button className="water-lab-collapse" onClick={() => setWaterPanelOpen((open) => !open)} aria-label={waterPanelOpen ? 'Collapse water controls' : 'Expand water controls'}>{waterPanelOpen ? '−' : '+'}</button>
+        </div>
+        {waterPanelOpen && (
+          <>
+            <div className="water-lab-group">
+              <span className="water-lab-group-title">SURFACE</span>
+              <WaterRange label="Sea level (Y)" value={waterSettings.level} min={-2} max={8} step={0.1} onChange={(v) => changeWaterSetting('level', v)} />
+              <WaterRange label="Ocean plane size" value={waterSettings.planeSize} min={1000} max={20000} step={500} onChange={(v) => changeWaterSetting('planeSize', v)} />
+              <WaterRange label="Wave detail scale" value={waterSettings.waveDetail} min={0.1} max={5} step={0.1} onChange={(v) => changeWaterSetting('waveDetail', v)} />
+              <WaterRange label="Normal strength" value={waterSettings.normalStrength} min={0.2} max={8} step={0.1} onChange={(v) => changeWaterSetting('normalStrength', v)} />
+            </div>
+            <div className="water-lab-group">
+              <span className="water-lab-group-title">LOOK &amp; REFLECTION</span>
+              <WaterRange label="Distortion scale" value={waterSettings.distortionScale} min={0} max={12} step={0.1} onChange={(v) => changeWaterSetting('distortionScale', v)} />
+              <WaterColor label="Water color" value={waterSettings.waterColor} onChange={(v) => changeWaterSetting('waterColor', v)} />
+              <WaterColor label="Sun highlight color" value={waterSettings.sunColor} onChange={(v) => changeWaterSetting('sunColor', v)} />
+              {waterRenderer === 'webgl' && <WaterSelect label="Reflection resolution" value={waterSettings.reflectionResolution} options={[128, 256, 512, 1024]} onChange={(v) => changeWaterSetting('reflectionResolution', v)} />}
+              {waterRenderer === 'webgpu' && <WaterRange label="Reflection quality scale" value={waterSettings.resolutionScale} min={0.1} max={1} step={0.05} onChange={(v) => changeWaterSetting('resolutionScale', v)} />}
+              {waterRenderer === 'webgpu' && <p className="water-lab-note">WebGPU animates waves at shader speed; the speed control is available in WebGL mode only.</p>}
+              {waterRenderer === 'webgl' && <WaterRange label="Wave animation speed" value={waterSettings.waveSpeed} min={0} max={2} step={0.05} onChange={(v) => changeWaterSetting('waveSpeed', v)} />}
+            </div>
+            <div className="water-lab-group">
+              <span className="water-lab-group-title">LIGHT DIRECTION</span>
+              <WaterRange label="Sun X" value={waterSettings.sunX} min={-1} max={1} step={0.05} onChange={(v) => changeWaterSetting('sunX', v)} />
+              <WaterRange label="Sun Y" value={waterSettings.sunY} min={-1} max={1} step={0.05} onChange={(v) => changeWaterSetting('sunY', v)} />
+              <WaterRange label="Sun Z" value={waterSettings.sunZ} min={-1} max={1} step={0.05} onChange={(v) => changeWaterSetting('sunZ', v)} />
+            </div>
+            <div className="water-lab-actions">
+              <button onClick={() => setWaterSettings({ ...DEFAULT_WATER_SETTINGS })}>RESET DEFAULTS</button>
+              <button className="water-lab-copy" onClick={copyWaterSettings}>{waterCopied ? 'COPIED ✓' : 'COPY SETTINGS JSON'}</button>
+            </div>
+            <details className="water-lab-json">
+              <summary>View current values</summary>
+              <pre>{JSON.stringify(waterSettings, null, 2)}</pre>
+            </details>
+            <p className="water-lab-note">Tune the scene first, then copy the JSON and send it back. Reflection resolution rebuilds the WebGL water surface and may briefly stutter.</p>
+          </>
+        )}
+      </section>
+
 
       {started && (
         <>
@@ -211,6 +284,36 @@ export default function App() {
         </div>
       )}
     </main>
+  );
+}
+
+function WaterRange({ label, value, min, max, step, onChange }) {
+  const formatted = Number(value).toFixed(step < 1 ? 2 : 0);
+  return (
+    <label className="water-lab-control">
+      <span><strong>{label}</strong><output>{String(Number(formatted))}</output></span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    </label>
+  );
+}
+
+function WaterColor({ label, value, onChange }) {
+  return (
+    <label className="water-lab-color">
+      <span>{label}<code>{value.toUpperCase()}</code></span>
+      <input type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function WaterSelect({ label, value, options, onChange }) {
+  return (
+    <label className="water-lab-select">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(Number(event.target.value))}>
+        {options.map((option) => <option key={option} value={option}>{option}px</option>)}
+      </select>
+    </label>
   );
 }
 
