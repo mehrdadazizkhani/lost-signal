@@ -157,8 +157,8 @@ export default function App() {
               <WaterColor label="Sun highlight color" value={waterSettings.sunColor} onChange={(v) => changeWaterSetting('sunColor', v)} />
               {waterRenderer === 'webgl' && <WaterSelect label="Reflection resolution" value={waterSettings.reflectionResolution} options={[128, 256, 512, 1024]} onChange={(v) => changeWaterSetting('reflectionResolution', v)} />}
               {waterRenderer === 'webgpu' && <WaterRange label="Reflection quality scale" value={waterSettings.resolutionScale} min={0.1} max={1} step={0.05} onChange={(v) => changeWaterSetting('resolutionScale', v)} />}
-              {waterRenderer === 'webgpu' && <p className="water-lab-note">WebGPU animates waves at shader speed; the speed control is available in WebGL mode only.</p>}
-              {waterRenderer === 'webgl' && <WaterRange label="Wave animation speed" value={waterSettings.waveSpeed} min={0} max={2} step={0.05} onChange={(v) => changeWaterSetting('waveSpeed', v)} />}
+              <WaterRange label="Wave animation speed" value={waterSettings.waveSpeed} min={0} max={2} step={0.05} onChange={(v) => changeWaterSetting('waveSpeed', v)} />
+              {waterRenderer === 'webgpu' && <p className="water-lab-note">This control scales the shader's animation time directly. Lower values slow the moving surface pattern.</p>}
             </div>
             <div className="water-lab-group">
               <span className="water-lab-group-title">LIGHT DIRECTION</span>
