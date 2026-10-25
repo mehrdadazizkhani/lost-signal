@@ -168,8 +168,8 @@ class WaterMeshTunable extends Mesh {
 			this.add( mirrorSampler.target );
 
 			const theta = max( dot( eyeDirection, surfaceNormal ), 0.0 );
-			const rf0 = float( 0.02 );
-			const reflectance = mul( pow( float( 1.0 ).sub( theta ), 5.0 ), float( 1.0 ).sub( rf0 ) ).add( rf0 );
+			const rf0 = float( 0.3 );
+			const reflectance = mul( pow( float( 1.0 ).sub( theta ), 3.0 ), float( 1.0 ).sub( rf0 ) ).add( rf0 );
 			const scatter = max( 0.0, dot( surfaceNormal, eyeDirection ) ).mul( this.waterColor );
 			const albedo = mix( this.sunColor.mul( diffuseLight ).mul( 0.3 ).add( scatter ), mirrorSampler.rgb.add( specularLight ), reflectance );
 
