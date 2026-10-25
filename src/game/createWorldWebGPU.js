@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Tree } from '@dgreenheck/ez-tree';
 import { createAudio } from './audio.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
-import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
+import { WaterMeshTunable } from './WaterMeshTunable.js';
 import { loadIslandSurface } from './islandSurface.js';
 import { DEFAULT_WATER_SETTINGS } from './waterTuning.js';
 
@@ -205,13 +205,14 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
       ocean.geometry.dispose();
       ocean.material.dispose();
     }
-    ocean = new WaterMesh(new THREE.PlaneGeometry(10000, 10000), {
+    ocean = new WaterMeshTunable(new THREE.PlaneGeometry(10000, 10000), {
       waterNormals,
       sunDirection: new THREE.Vector3(waterSettings.sunX, waterSettings.sunY, waterSettings.sunZ).normalize(),
       sunColor: waterSettings.sunColor,
       waterColor: waterSettings.waterColor,
       distortionScale: waterSettings.distortionScale,
       size: waterSettings.waveDetail,
+      waveSpeed: waterSettings.waveSpeed,
       resolutionScale: waterSettings.resolutionScale,
     });
     ocean.rotation.x = -Math.PI / 2;
@@ -672,6 +673,7 @@ export async function createWorldWebGPU(container, { onTimeUpdate = () => {}, on
     }
     const direction = new THREE.Vector3(waterSettings.sunX, waterSettings.sunY, waterSettings.sunZ).normalize();
     ocean.size.value = waterSettings.waveDetail;
+    ocean.waveSpeed.value = waterSettings.waveSpeed;
     ocean.distortionScale.value = waterSettings.distortionScale;
     ocean.resolutionScale = waterSettings.resolutionScale;
     ocean.sunDirection.value.copy(direction);
